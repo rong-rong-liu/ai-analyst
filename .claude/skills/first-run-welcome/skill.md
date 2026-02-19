@@ -13,7 +13,7 @@ onboarding flow based on what data is available.
 
 ### Step 1: Detect environment
 
-Check three things:
+Check five things:
 
 1. **User profile exists?** → `.knowledge/user/profile.md`
    - If YES: This is a returning user. Skip this skill entirely.
@@ -26,6 +26,22 @@ Check three things:
 3. **Active dataset configured?** → `.knowledge/active.yaml`
    - If YES and not "novamart": User has their own data connected.
    - If NO: No dataset configured yet.
+
+4. **MCP settings configured?** → `.claude/mcp.json`
+   - If MISSING: Show setup hint:
+     ```
+     MCP not configured yet. To connect to MotherDuck:
+       cp .claude/mcp.json.example .claude/mcp.json
+     Then edit .claude/mcp.json and add your MotherDuck token.
+     See setup/mcp-config.md for details.
+     ```
+
+5. **Claude settings configured?** → `.claude/settings.local.json`
+   - If MISSING: Show setup hint:
+     ```
+     Tip: Copy the example settings to allow Marp slide rendering:
+       cp .claude/settings.local.json.example .claude/settings.local.json
+     ```
 
 ### Step 2: Present welcome based on scenario
 

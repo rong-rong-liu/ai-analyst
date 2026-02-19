@@ -23,6 +23,29 @@ If the file is missing or empty:
 - If NovaMart data files exist in `data/novamart/`, set `active_dataset: novamart`
 - Otherwise, prompt: "No active dataset configured. Use `/connect-data` to add one."
 
+### Step 1b: Check for Tier 2 data files
+
+Check if the 5 large Tier 2 CSV files are present in `data/novamart/`:
+- `users.csv`, `orders.csv`, `events.csv`, `sessions.csv`, `support_tickets.csv`
+
+**If any are missing**, display this message before proceeding:
+
+```
+Some data files are not downloaded yet. The repo ships with 8 small
+reference tables but the 5 large analysis tables need to be downloaded.
+
+Run this from the repo root:
+  bash scripts/download-data.sh         # Sample data (~15MB, good for learning)
+  bash scripts/download-data.sh --full  # Full dataset (~200MB compressed)
+
+Missing files: {list of missing files}
+
+You can still query the Tier 1 tables (products, calendar, experiments,
+promotions, memberships, nps_responses, experiment_assignments, order_items).
+```
+
+Continue with bootstrap — don't halt. The system works with partial data.
+
 ### Step 2: Validate dataset brain
 
 Check that `.knowledge/datasets/{active}/` contains:
