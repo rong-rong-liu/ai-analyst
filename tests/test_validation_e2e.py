@@ -1,16 +1,16 @@
 """
-End-to-end integration test: Full validation pipeline on NovaMart data.
+End-to-end integration test: Full validation pipeline on synthetic data.
 
 Tests the complete chain:
-1. Load actual NovaMart CSV data (users, orders, products, events, sessions)
-2. Layer 1: Structural validation (schema, PK, RI, completeness)
-3. Layer 2: Logical validation (aggregation, segment, temporal, trend)
-4. Layer 3: Business rules (ranges, rates)
-5. Layer 4: Simpson's Paradox scan
-6. Confidence scoring synthesis (7-factor → score/grade/badge)
-7. Lineage tracking (record → chain → save/load)
+1. Layer 1: Structural validation (schema, PK, RI, completeness)
+2. Layer 2: Logical validation (aggregation, segment, temporal, trend)
+3. Layer 3: Business rules (ranges, rates, YoY change)
+4. Layer 4: Simpson's Paradox scan
+5. Confidence scoring synthesis (7-factor -> score/grade/badge)
+6. Lineage tracking (record -> chain -> save/load)
 
-This is the capstone integration test for the DQ workstream (DQ-4.4).
+All tests use synthetic fixtures from conftest.py -- no external data
+dependencies.
 """
 
 import os
@@ -20,127 +20,102 @@ import numpy as np
 import pandas as pd
 import pytest
 
-REPO_ROOT = os.path.join(os.path.dirname(__file__), "..")
-DATA_DIR = os.path.join(REPO_ROOT, "data", "novamart")
-
-# Skip entire module if NovaMart CSVs are missing
-pytestmark = pytest.mark.skipif(
-    not os.path.isdir(DATA_DIR),
-    reason="NovaMart data directory not found",
-)
-
-
-# ============================================================
-# Fixtures: load NovaMart tables once per session
-# ============================================================
-
-@pytest.fixture(scope="module")
-def users():
-    return pd.read_csv(os.path.join(DATA_DIR, "users.csv"))
-
-
-@pytest.fixture(scope="module")
-def orders():
-    return pd.read_csv(os.path.join(DATA_DIR, "orders.csv"))
-
-
-@pytest.fixture(scope="module")
-def products():
-    return pd.read_csv(os.path.join(DATA_DIR, "products.csv"))
-
-
-@pytest.fixture(scope="module")
-def events():
-    # Only load first 50k rows to keep tests fast
-    return pd.read_csv(os.path.join(DATA_DIR, "events.csv"), nrows=50000)
-
-
-@pytest.fixture(scope="module")
-def sessions():
-    return pd.read_csv(os.path.join(DATA_DIR, "sessions.csv"), nrows=50000)
-
-
-@pytest.fixture(scope="module")
-def order_items():
-    return pd.read_csv(os.path.join(DATA_DIR, "order_items.csv"))
-
 
 # ============================================================
 # Layer 1: Structural Validation
 # ============================================================
 
 class TestStructuralValidation:
-    """Layer 1: Schema, PK, RI, completeness on NovaMart tables."""
+    """Layer 1: Schema, PK, RI, completeness on synthetic data."""
 
-    def test_users_schema_passes(self, users):
+    def test_schema_passes_clean_data(self, synthetic_orders):
         from helpers.structural_validator import validate_schema
         result = validate_schema(
-            users,
-            expected_columns=["user_id", "signup_date", "acquisition_channel",
-                              "country", "device_primary"],
+            synthetic_orders,
+            expected_columns=["order_id", "user_id", "order_date",
+                              "amount", "status", "category"],
         )
-        assert result["severity"] == "PASS"
         assert result["valid"] is True
+        assert result["severity"] == "PASS"
         assert len(result["missing_columns"]) == 0
 
-    def test_users_primary_key_valid(self, users):
+    def test_schema_detects_missing_columns(self, synthetic_orders):
+        from helpers.structural_validator import validate_schema
+        result = validate_schema(
+            synthetic_orders,
+            expected_columns=["order_id", "nonexistent_col"],
+        )
+        assert result["valid"] is False
+        assert result["severity"] == "BLOCKER"
+        assert "nonexistent_col" in result["missing_columns"]
+
+    def test_schema_detects_dtype_mismatch(self, synthetic_orders):
+        from helpers.structural_validator import validate_schema
+        result = validate_schema(
+            synthetic_orders,
+            expected_dtypes={"amount": "object"},
+        )
+        assert len(result["dtype_mismatches"]) > 0
+        assert result["severity"] == "WARNING"
+
+    def test_primary_key_valid_clean_data(self, synthetic_orders):
         from helpers.structural_validator import validate_primary_key
-        result = validate_primary_key(users, key_columns=["user_id"])
+        result = validate_primary_key(synthetic_orders, key_columns=["order_id"])
+        assert result["valid"] is True
         assert result["severity"] == "PASS"
         assert result["null_count"] == 0
         assert result["duplicate_count"] == 0
 
-    def test_orders_primary_key_valid(self, orders):
+    def test_primary_key_detects_duplicates(self, dirty_orders):
         from helpers.structural_validator import validate_primary_key
-        result = validate_primary_key(orders, key_columns=["order_id"])
-        assert result["severity"] == "PASS"
+        result = validate_primary_key(dirty_orders, key_columns=["order_id"])
+        assert result["valid"] is False
+        assert result["severity"] == "BLOCKER"
+        assert result["duplicate_count"] > 0
 
-    def test_products_primary_key_valid(self, products):
-        from helpers.structural_validator import validate_primary_key
-        result = validate_primary_key(products, key_columns=["product_id"])
-        assert result["severity"] == "PASS"
-
-    def test_orders_users_referential_integrity(self, users, orders):
+    def test_referential_integrity_clean(self, synthetic_users, synthetic_orders):
         from helpers.structural_validator import validate_referential_integrity
         result = validate_referential_integrity(
-            parent_df=users, child_df=orders,
+            parent_df=synthetic_users, child_df=synthetic_orders,
             parent_key="user_id", child_key="user_id",
         )
-        # Expect low orphan rate (seed data is clean)
-        assert result["orphan_rate"] < 0.05
-        assert result["severity"] in ("PASS", "WARNING")
+        assert result["orphan_count"] == 0
+        assert result["orphan_rate"] == 0.0
+        assert result["severity"] == "PASS"
 
-    def test_events_users_referential_integrity(self, users, events):
+    def test_referential_integrity_detects_orphans(self, synthetic_users, dirty_orders):
+        """dirty_orders has null user_ids which get dropped, but also IDs
+        that may exceed the parent range -- validate orphan detection."""
         from helpers.structural_validator import validate_referential_integrity
+        # Create a small parent set so orphans are guaranteed
+        small_parent = synthetic_users.head(10)
         result = validate_referential_integrity(
-            parent_df=users, child_df=events,
+            parent_df=small_parent, child_df=dirty_orders,
             parent_key="user_id", child_key="user_id",
         )
-        assert result["orphan_rate"] < 0.05
+        assert result["orphan_count"] > 0
+        assert result["severity"] in ("WARNING", "BLOCKER")
 
-    def test_users_completeness(self, users):
+    def test_completeness_clean_data(self, synthetic_orders):
         from helpers.structural_validator import validate_completeness
         result = validate_completeness(
-            users,
-            required_columns=["user_id", "signup_date", "acquisition_channel",
-                              "country", "device_primary"],
+            synthetic_orders,
+            required_columns=["order_id", "user_id", "order_date", "amount"],
         )
-        # Core columns should have low null rates
-        assert result["overall_severity"] in ("PASS", "WARNING")
+        assert result["overall_severity"] == "PASS"
         for col_info in result["columns"]:
-            if col_info["name"] == "user_id":
-                assert col_info["null_rate"] == 0.0
+            assert col_info["null_rate"] == 0.0
 
-    def test_orders_completeness(self, orders):
+    def test_completeness_detects_nulls(self, dirty_orders):
         from helpers.structural_validator import validate_completeness
         result = validate_completeness(
-            orders,
-            required_columns=["order_id", "user_id", "order_date", "total_amount"],
+            dirty_orders,
+            required_columns=["order_id", "user_id", "order_date", "amount"],
         )
-        # order_id and user_id should be 100% complete
-        for col_info in result["columns"]:
-            if col_info["name"] in ("order_id", "user_id"):
-                assert col_info["null_rate"] == 0.0
+        # dirty_orders has 10% null user_ids and 10 null order_dates
+        assert result["overall_severity"] in ("WARNING", "BLOCKER")
+        user_col = next(c for c in result["columns"] if c["name"] == "user_id")
+        assert user_col["null_rate"] > 0
 
 
 # ============================================================
@@ -150,72 +125,104 @@ class TestStructuralValidation:
 class TestLogicalValidation:
     """Layer 2: Aggregation, segment, temporal, trend checks."""
 
-    def test_orders_aggregate_by_status(self, orders):
-        """Re-aggregate order totals by status and verify consistency."""
+    def test_aggregation_consistency_passes(self, synthetic_orders):
         from helpers.logical_validator import validate_aggregation_consistency
-
-        detail = orders[["status", "total_amount"]].copy()
-        summary = (
-            detail.groupby("status")["total_amount"]
-            .sum()
-            .reset_index()
-        )
+        detail = synthetic_orders[["status", "amount"]].copy()
+        summary = detail.groupby("status")["amount"].sum().reset_index()
         result = validate_aggregation_consistency(
             detail, summary,
-            group_col="status", metric_col="total_amount", agg="sum",
+            group_col="status", metric_col="amount", agg="sum",
         )
         assert result["valid"] is True
         assert result["severity"] == "PASS"
         assert len(result["mismatches"]) == 0
 
-    def test_users_segment_exhaustiveness(self, users):
-        """Verify acquisition_channel segments cover all users."""
-        from helpers.logical_validator import validate_segment_exhaustiveness
+    def test_aggregation_consistency_detects_mismatch(self, synthetic_orders):
+        from helpers.logical_validator import validate_aggregation_consistency
+        detail = synthetic_orders[["status", "amount"]].copy()
+        summary = detail.groupby("status")["amount"].sum().reset_index()
+        # Corrupt the summary to create mismatch
+        summary.iloc[0, summary.columns.get_loc("amount")] *= 2.0
+        result = validate_aggregation_consistency(
+            detail, summary,
+            group_col="status", metric_col="amount", agg="sum",
+        )
+        assert result["valid"] is False
+        assert len(result["mismatches"]) > 0
+        assert result["severity"] in ("WARNING", "BLOCKER")
 
-        # Create a simple metric column (count proxy: all 1s)
-        working = users.copy()
+    def test_segment_exhaustiveness_passes(self, synthetic_orders):
+        from helpers.logical_validator import validate_segment_exhaustiveness
+        working = synthetic_orders.copy()
         working["count"] = 1
         result = validate_segment_exhaustiveness(
-            working, segment_col="acquisition_channel", metric_col="count",
+            working, segment_col="status", metric_col="count",
         )
         assert result["severity"] == "PASS"
         assert result["missing_rows"] == 0
         assert result["diff_pct"] < 0.001
 
-    def test_daily_order_volume_temporal(self, orders):
-        """Check temporal consistency of daily order counts."""
-        from helpers.logical_validator import validate_temporal_consistency
+    def test_segment_exhaustiveness_detects_nulls(self):
+        """DataFrame with null segment values should trigger BLOCKER."""
+        from helpers.logical_validator import validate_segment_exhaustiveness
+        df = pd.DataFrame({
+            "segment": ["A", "B", None, "A", None],
+            "value": [10, 20, 30, 40, 50],
+        })
+        result = validate_segment_exhaustiveness(df, "segment", "value")
+        assert result["missing_rows"] == 2
+        assert result["severity"] == "BLOCKER"
 
+    def test_temporal_consistency_clean_daily(self, synthetic_orders):
+        from helpers.logical_validator import validate_temporal_consistency
+        # Build a continuous daily series from synthetic_orders
+        orders_copy = synthetic_orders.copy()
+        orders_copy["date"] = orders_copy["order_date"].dt.date
         daily = (
-            orders.groupby("order_date")
+            orders_copy.groupby("date")
             .agg(order_count=("order_id", "count"))
             .reset_index()
+            .rename(columns={"date": "order_date"})
         )
         result = validate_temporal_consistency(
             daily, date_col="order_date", metric_col="order_count",
             expected_freq="D",
         )
-        # Seed data should have continuous dates
         assert result["severity"] in ("PASS", "WARNING")
         assert len(result["duplicate_dates"]) == 0
 
-    def test_monthly_revenue_trend_continuity(self, orders):
-        """Check monthly revenue for structural breaks."""
-        from helpers.logical_validator import validate_trend_continuity
+    def test_temporal_consistency_detects_gaps(self):
+        """Series with missing dates should be detected."""
+        from helpers.logical_validator import validate_temporal_consistency
+        # Create a series with a gap
+        dates = pd.date_range("2024-01-01", "2024-01-10", freq="D").tolist()
+        dates.pop(5)  # Remove Jan 6
+        df = pd.DataFrame({
+            "date": dates,
+            "metric": range(len(dates)),
+        })
+        result = validate_temporal_consistency(
+            df, date_col="date", metric_col="metric", expected_freq="D",
+        )
+        assert len(result["missing_dates"]) >= 1
+        assert result["severity"] in ("WARNING", "BLOCKER")
 
-        orders_with_date = orders.copy()
-        orders_with_date["order_date"] = pd.to_datetime(
-            orders_with_date["order_date"]
-        )
-        monthly = (
-            orders_with_date
-            .set_index("order_date")
-            .resample("ME")["total_amount"]
-            .sum()
-        )
-        result = validate_trend_continuity(monthly, max_gap_pct=1.0)
-        # Allow some seasonal variation but no extreme breaks
-        assert result["severity"] in ("PASS", "WARNING")
+    def test_trend_continuity_smooth(self):
+        from helpers.logical_validator import validate_trend_continuity
+        # Smooth series with small variation
+        series = pd.Series([100, 102, 105, 103, 107, 110, 108, 112])
+        result = validate_trend_continuity(series, max_gap_pct=0.5)
+        assert result["valid"] is True
+        assert result["severity"] == "PASS"
+        assert len(result["breaks"]) == 0
+
+    def test_trend_continuity_detects_breaks(self):
+        from helpers.logical_validator import validate_trend_continuity
+        # Series with a sudden 10x jump
+        series = pd.Series([100, 102, 105, 1050, 108, 112])
+        result = validate_trend_continuity(series, max_gap_pct=0.5)
+        assert result["valid"] is False
+        assert len(result["breaks"]) > 0
 
 
 # ============================================================
@@ -223,64 +230,83 @@ class TestLogicalValidation:
 # ============================================================
 
 class TestBusinessRules:
-    """Layer 3: Range validation, rate validation."""
+    """Layer 3: Range validation, rate validation, YoY change."""
 
-    def test_product_price_ranges(self, products):
+    def test_price_ranges_clean(self, synthetic_products):
         from helpers.business_rules import validate_ranges
-
         rules = [
-            {"column": "price", "min": 0, "max": 1000, "name": "product_price"},
+            {"column": "price", "min": 0, "max": 500, "name": "product_price"},
         ]
-        result = validate_ranges(products, rules)
+        result = validate_ranges(synthetic_products, rules)
         assert result["valid"] is True
         for v in result["violations"]:
             assert v["severity"] == "PASS"
             assert v["out_of_range_count"] == 0
 
-    def test_order_total_ranges(self, orders):
+    def test_amount_ranges_detect_violations(self, dirty_orders):
         from helpers.business_rules import validate_ranges
-
         rules = [
-            {"column": "total_amount", "min": 0, "max": 50000,
-             "name": "order_total"},
+            {"column": "amount", "min": 0, "max": 10000,
+             "name": "order_amount"},
         ]
-        result = validate_ranges(orders, rules)
-        # All order totals should be non-negative
-        for v in result["violations"]:
-            assert v["min_seen"] >= 0
+        result = validate_ranges(dirty_orders, rules)
+        # dirty_orders has a negative amount (-10.0) and an extreme outlier (1e7)
+        violation = result["violations"][0]
+        assert violation["out_of_range_count"] > 0
+        assert violation["min_seen"] < 0
 
-    def test_session_purchase_rate(self, sessions):
-        """Validate session-level conversion rate is between 0 and 1."""
+    def test_rate_validation_clean(self, synthetic_orders):
         from helpers.business_rules import validate_rates
-
-        working = sessions.copy()
-        working["purchases"] = working["had_purchase"].astype(int)
+        # Create a rate dataset: each row is a "session" with 0/1 conversion
+        working = synthetic_orders.copy()
+        working["converted"] = (working["status"] == "completed").astype(int)
         working["session_count"] = 1
-        # Aggregate to get a rate dataset
         result = validate_rates(
-            working, numerator_col="purchases",
+            working, numerator_col="converted",
             denominator_col="session_count",
-            expected_range=(0, 1), name="session_conversion",
+            expected_range=(0, 1), name="conversion_rate",
         )
-        assert result["severity"] in ("PASS", "WARNING")
+        assert result["severity"] == "PASS"
         assert result["rate_stats"]["min"] >= 0
         assert result["rate_stats"]["max"] <= 1
 
-    def test_yoy_change_plausible(self):
-        """Validate YoY change logic with synthetic values."""
-        from helpers.business_rules import validate_yoy_change
+    def test_rate_validation_flags_zero_denominator(self):
+        from helpers.business_rules import validate_rates
+        df = pd.DataFrame({
+            "numerator": [5, 3, 0, 2],
+            "denominator": [10, 0, 5, 8],
+        })
+        result = validate_rates(
+            df, numerator_col="numerator",
+            denominator_col="denominator",
+            expected_range=(0, 1), name="test_rate",
+        )
+        assert result["zero_denominator_count"] == 1
+        assert result["severity"] in ("WARNING", "BLOCKER")
 
-        # Plausible 20% growth
+    def test_yoy_change_plausible(self):
+        from helpers.business_rules import validate_yoy_change
         result = validate_yoy_change(120, 100, max_change_pct=2.0,
                                      metric_name="revenue")
         assert result["valid"] is True
         assert result["severity"] == "PASS"
         assert result["direction"] == "up"
+        assert abs(result["change_pct"] - 0.2) < 0.01
 
-        # Implausible 500% growth
+    def test_yoy_change_implausible(self):
+        from helpers.business_rules import validate_yoy_change
         result = validate_yoy_change(600, 100, max_change_pct=2.0,
                                      metric_name="revenue")
+        assert result["valid"] is False
         assert result["severity"] == "BLOCKER"
+        assert result["change_pct"] == 5.0
+
+    def test_yoy_change_decline(self):
+        from helpers.business_rules import validate_yoy_change
+        result = validate_yoy_change(80, 100, max_change_pct=2.0,
+                                     metric_name="revenue")
+        assert result["direction"] == "down"
+        assert result["severity"] == "PASS"
 
 
 # ============================================================
@@ -288,42 +314,58 @@ class TestBusinessRules:
 # ============================================================
 
 class TestSimpsonsParadox:
-    """Layer 4: Simpson's Paradox detection on NovaMart data."""
+    """Layer 4: Simpson's Paradox detection using dedicated fixtures."""
 
-    def test_scan_dimensions_runs(self, orders, users):
-        """Scan for Simpson's Paradox across key dimensions."""
+    def test_detects_paradox(self, simpsons_paradox_data):
+        from helpers.simpsons_paradox import check_simpsons_paradox
+        result = check_simpsons_paradox(
+            simpsons_paradox_data,
+            metric_col="admitted",
+            group_col="group",
+            segment_col="department",
+        )
+        assert result["paradox_detected"] is True
+        assert result["severity"] == "BLOCKER"
+        assert len(result["reversal_segments"]) > 0
+        assert "explanation" in result
+
+    def test_no_paradox_consistent_data(self, no_paradox_data):
+        from helpers.simpsons_paradox import check_simpsons_paradox
+        result = check_simpsons_paradox(
+            no_paradox_data,
+            metric_col="admitted",
+            group_col="group",
+            segment_col="department",
+        )
+        assert result["paradox_detected"] is False
+        assert result["severity"] in ("PASS", "INFO")
+
+    def test_scan_dimensions_multiple(self, synthetic_orders, synthetic_users):
         from helpers.simpsons_paradox import scan_dimensions
-
-        # Merge orders with user attributes for segmentation
-        merged = orders.merge(users[["user_id", "device_primary", "country"]],
-                              on="user_id", how="left")
-        # Use completed vs cancelled as groups, total_amount as metric
+        merged = synthetic_orders.merge(
+            synthetic_users[["user_id", "device", "country"]],
+            on="user_id", how="left",
+        )
         result = scan_dimensions(
-            merged, metric_col="total_amount", group_col="status",
-            candidate_segments=["device_primary", "country"],
+            merged, metric_col="amount", group_col="status",
+            candidate_segments=["device", "country"],
         )
         assert result["scanned"] == 2
         assert isinstance(result["paradoxes_found"], int)
         assert len(result["results"]) == 2
-        # Each result should have the expected structure
         for r in result["results"]:
             assert "paradox_detected" in r
             assert "aggregate_direction" in r
             assert "severity" in r
 
-    def test_check_single_dimension(self, orders, users):
-        """Check one dimension for paradox."""
-        from helpers.simpsons_paradox import check_simpsons_paradox
-
-        merged = orders.merge(users[["user_id", "device_primary"]],
-                              on="user_id", how="left")
-        result = check_simpsons_paradox(
-            merged, metric_col="total_amount",
-            group_col="status", segment_col="device_primary",
+    def test_scan_dimensions_missing_column(self, synthetic_orders):
+        from helpers.simpsons_paradox import scan_dimensions
+        result = scan_dimensions(
+            synthetic_orders, metric_col="amount", group_col="status",
+            candidate_segments=["nonexistent_col"],
         )
-        assert "paradox_detected" in result
-        assert "explanation" in result
-        assert result["severity"] in ("PASS", "INFO", "BLOCKER")
+        assert result["scanned"] == 1
+        assert result["results"][0]["severity"] == "WARNING"
 
 
 # ============================================================
@@ -331,10 +373,12 @@ class TestSimpsonsParadox:
 # ============================================================
 
 class TestConfidenceScoring:
-    """Confidence scoring on real NovaMart validation results."""
+    """Confidence scoring on synthetic validation results."""
 
-    def test_full_pipeline_confidence(self, users, orders, products):
-        """Run all 4 layers and compute confidence score."""
+    def test_full_pipeline_confidence_clean_data(
+        self, synthetic_users, synthetic_orders, synthetic_products,
+    ):
+        """Run all 4 layers on clean data and compute confidence score."""
         from helpers.structural_validator import (
             validate_schema, validate_primary_key,
             validate_referential_integrity, validate_completeness,
@@ -351,50 +395,45 @@ class TestConfidenceScoring:
 
         # --- Layer 1: Structural ---
         schema_result = validate_schema(
-            orders,
+            synthetic_orders,
             expected_columns=["order_id", "user_id", "order_date",
-                              "total_amount", "status"],
+                              "amount", "status"],
         )
-        pk_result = validate_primary_key(orders, ["order_id"])
+        pk_result = validate_primary_key(synthetic_orders, ["order_id"])
         ri_result = validate_referential_integrity(
-            users, orders, "user_id", "user_id",
+            synthetic_users, synthetic_orders, "user_id", "user_id",
         )
         completeness_result = validate_completeness(
-            orders,
-            required_columns=["order_id", "user_id", "order_date",
-                              "total_amount"],
+            synthetic_orders,
+            required_columns=["order_id", "user_id", "order_date", "amount"],
         )
 
         # --- Layer 2: Logical ---
-        detail = orders[["status", "total_amount"]].copy()
-        summary = (
-            detail.groupby("status")["total_amount"]
-            .sum()
-            .reset_index()
-        )
+        detail = synthetic_orders[["status", "amount"]].copy()
+        summary = detail.groupby("status")["amount"].sum().reset_index()
         agg_result = validate_aggregation_consistency(
-            detail, summary, "status", "total_amount",
+            detail, summary, "status", "amount",
         )
-        working = orders.copy()
+        working = synthetic_orders.copy()
         working["count"] = 1
         seg_result = validate_segment_exhaustiveness(
             working, "status", "count",
         )
 
         # --- Layer 3: Business rules ---
-        range_result = validate_ranges(orders, [
-            {"column": "total_amount", "min": 0, "max": 50000,
-             "name": "order_total"},
+        range_result = validate_ranges(synthetic_orders, [
+            {"column": "amount", "min": 0, "max": 50000,
+             "name": "order_amount"},
         ])
 
         # --- Layer 4: Simpson's ---
-        merged = orders.merge(
-            users[["user_id", "device_primary", "country"]],
+        merged = synthetic_orders.merge(
+            synthetic_users[["user_id", "device", "country"]],
             on="user_id", how="left",
         )
         simpsons_result = scan_dimensions(
-            merged, "total_amount", "status",
-            ["device_primary", "country"],
+            merged, "amount", "status",
+            ["device", "country"],
         )
 
         # --- Synthesize ---
@@ -410,7 +449,7 @@ class TestConfidenceScoring:
         }
         confidence = score_confidence(
             validation_results,
-            metadata={"row_count": len(orders)},
+            metadata={"row_count": len(synthetic_orders)},
         )
 
         # --- Assertions ---
@@ -423,7 +462,7 @@ class TestConfidenceScoring:
         assert isinstance(confidence["interpretation"], str)
         assert isinstance(confidence["recommendation"], str)
 
-        # NovaMart seed data is clean — expect at least a passing grade
+        # Clean synthetic data should achieve a reasonable grade
         assert confidence["grade"] in ("A", "B", "C"), \
             f"Expected passing grade, got {confidence['grade']}: {confidence['interpretation']}"
 
@@ -439,20 +478,52 @@ class TestConfidenceScoring:
         assert result["score"] == 0
         assert result["grade"] == "F"
 
-    def test_partial_results_caps_at_c(self, orders):
+    def test_partial_results_caps_at_c(self, synthetic_orders):
         """With only one validator layer, grade should be capped at C."""
         from helpers.structural_validator import validate_primary_key
         from helpers.confidence_scoring import score_confidence
 
-        pk = validate_primary_key(orders, ["order_id"])
+        pk = validate_primary_key(synthetic_orders, ["order_id"])
         result = score_confidence(
             {"primary_key": pk},
-            metadata={"row_count": len(orders)},
+            metadata={"row_count": len(synthetic_orders)},
         )
-        # Partial results → grade capped at C regardless of factor score
         assert result["grade"] in ("C", "D", "F")
 
-    def test_merge_confidence_scores(self, users, orders):
+    def test_dirty_data_lowers_confidence(self, dirty_orders, synthetic_users):
+        """Dirty data should produce a lower confidence score."""
+        from helpers.structural_validator import (
+            validate_primary_key, validate_completeness,
+            validate_referential_integrity,
+        )
+        from helpers.business_rules import validate_ranges
+        from helpers.confidence_scoring import score_confidence
+
+        pk = validate_primary_key(dirty_orders, ["order_id"])
+        comp = validate_completeness(
+            dirty_orders, ["order_id", "user_id", "order_date", "amount"],
+        )
+        ri = validate_referential_integrity(
+            synthetic_users, dirty_orders, "user_id", "user_id",
+        )
+        ranges = validate_ranges(dirty_orders, [
+            {"column": "amount", "min": 0, "max": 10000, "name": "order_amount"},
+        ])
+
+        result = score_confidence(
+            {
+                "primary_key": pk,
+                "completeness": comp,
+                "referential_integrity": ri,
+                "ranges": ranges,
+            },
+            metadata={"row_count": len(dirty_orders)},
+        )
+        # Dirty data has PK issues and null columns -> should have blockers
+        assert len(result["blockers"]) > 0
+        assert result["grade"] in ("C", "D", "F")
+
+    def test_merge_confidence_scores(self, synthetic_users, synthetic_orders):
         """Test merging scores from two analysis steps."""
         from helpers.structural_validator import (
             validate_primary_key, validate_completeness,
@@ -462,19 +533,19 @@ class TestConfidenceScoring:
         )
 
         # Step 1: orders validation
-        pk1 = validate_primary_key(orders, ["order_id"])
-        comp1 = validate_completeness(orders, ["order_id", "user_id"])
+        pk1 = validate_primary_key(synthetic_orders, ["order_id"])
+        comp1 = validate_completeness(synthetic_orders, ["order_id", "user_id"])
         s1 = score_confidence(
             {"primary_key": pk1, "completeness": comp1},
-            metadata={"row_count": len(orders)},
+            metadata={"row_count": len(synthetic_orders)},
         )
 
         # Step 2: users validation
-        pk2 = validate_primary_key(users, ["user_id"])
-        comp2 = validate_completeness(users, ["user_id", "signup_date"])
+        pk2 = validate_primary_key(synthetic_users, ["user_id"])
+        comp2 = validate_completeness(synthetic_users, ["user_id", "signup_date"])
         s2 = score_confidence(
             {"primary_key": pk2, "completeness": comp2},
-            metadata={"row_count": len(users)},
+            metadata={"row_count": len(synthetic_users)},
         )
 
         merged = merge_confidence_scores([s1, s2])
@@ -488,7 +559,7 @@ class TestConfidenceScoring:
 # ============================================================
 
 class TestLineageTracking:
-    """Lineage tracking integration with NovaMart pipeline."""
+    """Lineage tracking integration with synthetic pipeline."""
 
     def test_pipeline_lineage_chain(self):
         """Simulate a 3-step pipeline and verify lineage chain."""
@@ -500,22 +571,22 @@ class TestLineageTracking:
             # Step 1: Data Explorer
             tracker.record(
                 step=4, agent="data-explorer",
-                inputs=["data/novamart/orders.csv",
-                        "data/novamart/users.csv"],
+                inputs=["data/synthetic/orders.csv",
+                        "data/synthetic/users.csv"],
                 outputs=["working/data_inventory.md"],
                 metadata={"tables_profiled": 2},
             )
 
-            # Step 2: Descriptive Analytics (consumes inventory)
+            # Step 2: Descriptive Analytics
             tracker.record(
                 step=5, agent="descriptive-analytics",
                 inputs=["working/data_inventory.md",
-                        "data/novamart/orders.csv"],
+                        "data/synthetic/orders.csv"],
                 outputs=["working/analysis_report.md"],
                 metadata={"tables_used": 2, "findings_count": 5},
             )
 
-            # Step 3: Validation (consumes analysis)
+            # Step 3: Validation
             tracker.record(
                 step=7, agent="validation",
                 inputs=["working/analysis_report.md"],
@@ -537,7 +608,7 @@ class TestLineageTracking:
             chain = tracker.get_lineage_for_output(
                 "working/validation_report.md"
             )
-            assert len(chain) == 3  # validation → analytics → explorer
+            assert len(chain) == 3
             agents_in_chain = [e["agent"] for e in chain]
             assert "validation" in agents_in_chain
             assert "descriptive-analytics" in agents_in_chain
@@ -548,7 +619,6 @@ class TestLineageTracking:
         from helpers.lineage_tracker import LineageTracker
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Write
             tracker = LineageTracker(output_dir=tmpdir)
             tracker.record(
                 step=1, agent="test-agent",
@@ -556,10 +626,8 @@ class TestLineageTracking:
             )
             tracker.save()
 
-            # Verify file exists
             assert os.path.isfile(os.path.join(tmpdir, "lineage.json"))
 
-            # Reload
             tracker2 = LineageTracker(output_dir=tmpdir)
             tracker2.load()
             loaded = tracker2.get_lineage()
@@ -589,14 +657,18 @@ class TestLineageTracking:
 
 
 # ============================================================
-# Full Pipeline Chain (the capstone test)
+# Full Pipeline Chain (capstone)
 # ============================================================
 
 class TestFullPipelineChain:
     """Capstone: Run the entire validation pipeline end-to-end."""
 
-    def test_capstone_e2e(self, users, orders, products, events):
-        """Full chain: load data → 4 layers → confidence → lineage."""
+    @pytest.mark.slow
+    def test_capstone_e2e(
+        self, synthetic_users, synthetic_orders, synthetic_products,
+        simpsons_paradox_data,
+    ):
+        """Full chain: 4 layers -> confidence -> lineage, all on synthetic data."""
         from helpers.structural_validator import (
             validate_schema, validate_primary_key,
             validate_referential_integrity, validate_completeness,
@@ -615,52 +687,55 @@ class TestFullPipelineChain:
 
         # === LAYER 1: Structural ===
         schema = validate_schema(
-            orders,
+            synthetic_orders,
             expected_columns=["order_id", "user_id", "order_date",
-                              "total_amount", "status"],
+                              "amount", "status"],
         )
-        pk = validate_primary_key(orders, ["order_id"])
+        pk = validate_primary_key(synthetic_orders, ["order_id"])
         ri = validate_referential_integrity(
-            users, orders, "user_id", "user_id",
+            synthetic_users, synthetic_orders, "user_id", "user_id",
         )
         comp = validate_completeness(
-            orders, ["order_id", "user_id", "order_date", "total_amount"],
+            synthetic_orders, ["order_id", "user_id", "order_date", "amount"],
         )
 
         # === LAYER 2: Logical ===
-        detail = orders[["status", "total_amount"]].copy()
-        summary = detail.groupby("status")["total_amount"].sum().reset_index()
+        detail = synthetic_orders[["status", "amount"]].copy()
+        summary = detail.groupby("status")["amount"].sum().reset_index()
         agg = validate_aggregation_consistency(
-            detail, summary, "status", "total_amount",
+            detail, summary, "status", "amount",
         )
 
-        working = orders.copy()
+        working = synthetic_orders.copy()
         working["count"] = 1
         seg = validate_segment_exhaustiveness(working, "status", "count")
 
+        orders_copy = synthetic_orders.copy()
+        orders_copy["date"] = orders_copy["order_date"].dt.date
         daily = (
-            orders.groupby("order_date")
+            orders_copy.groupby("date")
             .agg(order_count=("order_id", "count"))
             .reset_index()
+            .rename(columns={"date": "order_date"})
         )
         temporal = validate_temporal_consistency(
             daily, "order_date", "order_count", expected_freq="D",
         )
 
         # === LAYER 3: Business Rules ===
-        ranges = validate_ranges(orders, [
-            {"column": "total_amount", "min": 0, "max": 50000,
-             "name": "order_total"},
+        ranges = validate_ranges(synthetic_orders, [
+            {"column": "amount", "min": 0, "max": 50000,
+             "name": "order_amount"},
         ])
 
         # === LAYER 4: Simpson's ===
-        merged = orders.merge(
-            users[["user_id", "device_primary", "country"]],
+        merged = synthetic_orders.merge(
+            synthetic_users[["user_id", "device", "country"]],
             on="user_id", how="left",
         )
         simpsons = scan_dimensions(
-            merged, "total_amount", "status",
-            ["device_primary", "country"],
+            merged, "amount", "status",
+            ["device", "country"],
         )
 
         # === CONFIDENCE SCORING ===
@@ -677,7 +752,7 @@ class TestFullPipelineChain:
         }
         confidence = score_confidence(
             validation_results,
-            metadata={"row_count": len(orders)},
+            metadata={"row_count": len(synthetic_orders)},
         )
 
         # Score is computed and reasonable
@@ -703,9 +778,9 @@ class TestFullPipelineChain:
 
             tracker.record(
                 step=4, agent="data-explorer",
-                inputs=["data/novamart/orders.csv"],
+                inputs=["data/synthetic/orders.csv"],
                 outputs=["working/data_inventory.md"],
-                metadata={"tables_profiled": 5},
+                metadata={"tables_profiled": 3},
             )
             tracker.record(
                 step=5, agent="descriptive-analytics",
@@ -736,12 +811,3 @@ class TestFullPipelineChain:
 
             # Metadata carries through
             assert chain[0]["metadata"]["confidence_score"] == confidence["score"]
-
-        # === FINAL: Print summary for CI ===
-        print(f"\n{'='*60}")
-        print(f"DQ-4.4 E2E VALIDATION COMPLETE")
-        print(f"Score: {confidence['score']}/100  Grade: {confidence['grade']}")
-        print(f"Blockers: {len(confidence['blockers'])}")
-        print(f"Factors scored: {len(confidence['factors'])}")
-        print(f"Lineage chain length: 3")
-        print(f"{'='*60}")

@@ -26,8 +26,5 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]" 2>/dev/null || pip install pandas matplotlib duckdb pyyaml pytest faker
 
-      - name: Download sample data
-        run: bash scripts/download-data.sh --sample
-
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short
