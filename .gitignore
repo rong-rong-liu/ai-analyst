@@ -94,8 +94,10 @@ yarn-debug.log*
 yarn-error.log*
 
 # Knowledge system -- user-specific files
+.knowledge/active.yaml
+.knowledge/setup-state.yaml
 .knowledge/user/
-.knowledge/datasets/*/last_profile.md
+.knowledge/datasets/*/
 
 # Analyses archive (user-generated content ignored, seed files kept)
 .knowledge/analyses/*
