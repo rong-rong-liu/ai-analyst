@@ -1,104 +1,119 @@
-# .knowledge/ -- AI Analyst Knowledge System
+# .knowledge/ -- Persistent Memory Layer
 
-This directory is the AI Analyst's persistent memory. It stores structured
-knowledge about datasets, metrics, analyses, and user preferences across
-sessions.
+The `.knowledge/` directory is the AI Analyst's long-term memory. It stores
+everything learned across sessions: dataset schemas, business context, user
+corrections, reusable query patterns, and analysis history. Skills and agents
+read from it at session start and write to it at analysis end.
 
-## Directory Contract
+---
+
+## Directory Map
 
 ```
 .knowledge/
-  active.yaml              # Points to the active dataset (set by /switch-dataset)
-  README.md                # This file
-  user/
-    profile.md             # User preferences and expertise profile (gitignored)
-  datasets/
-    _metric_schema.yaml    # Shared metric entry format definition
-    _analysis_schema.yaml  # Shared analysis entry format definition
-    .gitignore             # Ignores */last_profile.md and user-created datasets
-    {dataset_name}/        # One directory per connected dataset
-      manifest.yaml        # Dataset identity, connection config, summary stats
-      schema.md            # Table/column documentation (generated from YAML)
-      quirks.md            # Dataset-specific data quirks and gotchas
-      last_profile.md      # Most recent DQ profiling results (gitignored)
-      preferences.md       # Dataset-specific analysis preferences (optional)
-      metrics/
-        index.yaml         # Metric index for this dataset
-        *.yaml             # Individual metric spec files
-  analyses/                # Global analysis archive (gitignored)
-    index.yaml             # Analysis index with dataset_id tags
-    _patterns.yaml         # Extracted patterns across analyses
-    _schema.yaml           # Analysis entry format definition
-    {date}_{slug}/         # Individual analysis runs
-      summary.yaml         # Tagged with dataset_id
-  global/                  # Cross-dataset observations (gitignored)
-    cross_dataset_observations.yaml
+├── active.yaml                 — pointer to the current dataset
+├── setup-state.yaml            — onboarding interview progress tracker
+├── datasets/                   — per-dataset brain (schema, metrics, quirks)
+│   ├── .gitignore              — ignores profiling results and data files
+│   └── _metric_schema.yaml     — shared metric entry format definition
+├── corrections/                — analyst mistake log with fixes
+│   ├── index.yaml              — summary counts by severity and category
+│   ├── log.yaml                — append-only corrections list
+│   └── log.template.yaml       — template for new entries
+├── learnings/                  — accumulated insights by category
+│   └── index.md                — categorized learnings (data, query, business)
+├── query-archaeology/          — reusable SQL patterns and table cheatsheets
+│   ├── raw/                    — unprocessed query snippets from analyses
+│   ├── curated/                — reviewed patterns, organized by type
+│   │   ├── cookbook/            — reusable SQL recipes (CK-nnn)
+│   │   ├── tables/             — per-table cheatsheets
+│   │   ├── joins/              — validated join patterns
+│   │   └── index.yaml          — curated entry counts
+│   └── schemas/                — JSON schemas for entry validation
+├── analyses/                   — analysis archive and recurring patterns
+│   ├── index.yaml              — completed analysis index
+│   ├── _schema.yaml            — analysis entry format definition
+│   └── _patterns.yaml          — recurring patterns across analyses
+├── organizations/              — business context per org
+│   └── _example/               — template org (committed)
+│       ├── manifest.yaml       — org identity and industry
+│       └── business/           — glossary, metrics, objectives, products, teams
+├── user/                       — user profile and preferences
+│   └── integrations.yaml       — export channels and communication prefs
+└── global/                     — cross-dataset observations
+    └── cross_dataset_observations.yaml
 ```
 
-## Rules
+---
 
-1. **Structured data in YAML, prose in Markdown.** Manifests, metrics, and
-   indices are YAML. Schema docs, quirks, and profiles are Markdown.
-2. **Per-dataset isolation.** Each dataset has its own brain under
-   `datasets/{name}/`. Never mix data from different datasets in one file.
-3. **active.yaml is the single source of truth** for which dataset is active.
-   Read it at analysis start. Update it only via /switch-dataset or /connect-data.
-4. **Never modify .knowledge/ files during analysis** except `last_profile.md`
-   and the `analyses/` archive (which are append-only or overwrite-only).
-5. **Committed vs gitignored:** NovaMart brain files are committed (seed data).
-   User-created dataset brains, profiles, and analysis archives are gitignored.
+## Subsystem Details
 
-## File Ownership
+### 1. Datasets (`datasets/`)
+Per-dataset "brain": `manifest.yaml`, `schema.md`, `quirks.md`, and optional
+`metrics/` folder. Populated by `/connect-data` and Data Profiling skill.
+Profiling output (`last_profile.md`) is gitignored; schemas are committed.
 
-| File / Directory | Owner | Created by | Updated by |
-|-----------------|-------|-----------|-----------|
-| `active.yaml` | Knowledge system | PORT-1 bootstrap | `/switch-dataset`, `/connect-data` |
-| `datasets/{name}/manifest.yaml` | Knowledge system | `/connect-data` or bootstrap | Manual or re-profile |
-| `datasets/{name}/schema.md` | Knowledge system | Bootstrap or K-2 rendering | Re-profile or manual edit |
-| `datasets/{name}/quirks.md` | Knowledge system | Bootstrap or manual | Manual edit |
-| `datasets/{name}/last_profile.md` | DQ system | Data Quality Check skill | Re-profile |
-| `datasets/{name}/metrics/` | Metric system | `/metric-spec` or K-3 | Pipeline auto-capture, manual |
-| `user/profile.md` | User | Bootstrap (auto-created) | Auto-updated from corrections |
-| `analyses/` | Archive system | Pipeline completion | Append-only |
-| `global/` | Cross-dataset system | Pattern extraction | Append-only |
+### 2. Corrections (`corrections/`)
+Analyst mistake log with severity, category, SQL before/after, and prevention
+rule. Populated by `/log-correction`. Read by agents as pre-flight check.
 
-## Versioning Policy
+### 3. Learnings (`learnings/`)
+Insights in six categories: data patterns, query techniques, business context,
+stakeholder preferences, visualization insights, methodology notes. Populated
+during analyses. Template (`index.md`) committed; content gitignored.
 
-- **Seed files** (NovaMart brain) are version-controlled and committed.
-- **Generated files** (`last_profile.md`, `analyses/`, `global/`, `user/`)
-  are gitignored — they are session artifacts, not source of truth.
-- **User-created dataset brains** are gitignored by `.knowledge/datasets/.gitignore`
-  (except the seed NovaMart dataset).
+### 4. Query Archaeology (`query-archaeology/`)
+Reusable SQL extracted from analyses. Raw queries in `raw/`, curated into
+`cookbook/`, `tables/`, and `joins/`. Populated by Archive Analysis skill.
+JSON schemas in `schemas/` committed; curated entries gitignored.
 
-## Cleanup
+### 5. Analyses (`analyses/`)
+Archive of completed runs. `index.yaml` tracks question, findings, confidence
+grade, and output paths. `_patterns.yaml` records recurring patterns (populated
+after 3+ analyses). Schema files committed; archive entries gitignored.
 
-- `last_profile.md` is overwritten on each re-profile. No cleanup needed.
-- `analyses/` entries accumulate. Future K-4 will add archive management.
-- `user/profile.md` is a single file, updated in place.
+### 6. Organizations (`organizations/`)
+Business context per org: glossary, KPIs, products, teams, objectives. Populated
+during `/setup` Phase 3. `_example/` committed as template; real orgs gitignored.
 
-## User Profile System
+### 7. User (`user/`) and Global (`global/`)
+`user/` stores profile (`profile.md`) and export preferences (`integrations.yaml`).
+`global/` holds cross-dataset observations from Compare Datasets skill.
+Templates committed; user-generated content gitignored.
 
-### Overview
-The user profile (`user/profile.md`) stores learned preferences about the user
-to personalize analysis outputs. It is auto-created by the Knowledge Bootstrap
-skill on first session and updated when the user corrects system assumptions.
+## Gitignore Policy
 
-### Profile Fields
-- **Role & Expertise** — role, technical level, SQL/stats comfort, domain
-- **Communication Preferences** — detail level, chart preference, narrative style
-- **Corrections Log** — timestamped record of user corrections
+**Committed** (shipped with the repo):
+- Schema definitions: `_schema.yaml`, `_patterns.yaml`, `_metric_schema.yaml`
+- Templates: `log.template.yaml`, `index.md`, `index.yaml` stubs
+- Example org: `organizations/_example/`
+- Structural markers: `.gitkeep` files, `.gitignore` files
+- JSON schemas: `query-archaeology/schemas/`
+- Config templates: `user/integrations.yaml`, `setup-state.yaml`, `active.yaml`
 
-### Lifecycle
-1. **Creation:** Bootstrap skill creates from template if missing
-2. **Reading:** Bootstrap loads profile at session start; applies preferences
-   to response verbosity, chart count, and narrative style
-3. **Updating:** When user corrects a preference (e.g., "give me more detail"),
-   the system updates the relevant field and logs the correction
-4. **Integration:** Question Router (UX-1.1, Wave 2) will read the profile to
-   adapt classification thresholds and response format
+**Gitignored** (user-generated, session artifacts):
+- Dataset brains created by `/connect-data` (except committed examples)
+- Profiling results (`*/last_profile.md`)
+- Corrections log entries
+- Learnings content
+- Curated query patterns
+- Analysis archive entries
+- Real organization business data
+- User profile (`user/profile.md`)
+- Cross-dataset observations
 
-### Update Rules
-- Only update when user **explicitly** corrects or states a preference
-- Never infer preferences from silence
-- Always log corrections with date, what was wrong, what was right
-- Profile is gitignored — each user gets their own
+---
+
+## Bootstrap Flow
+
+At session start, the Knowledge Bootstrap skill runs this sequence:
+
+1. Read `active.yaml` to find the active dataset
+2. Load `datasets/{active}/manifest.yaml`, `schema.md`, and `quirks.md`
+3. Load `user/profile.md` for communication preferences
+4. Load `corrections/index.yaml` to surface recent mistake patterns
+5. Load `organizations/{org}/` for business context if configured
+6. Check `setup-state.yaml` to determine onboarding status
+
+If no active dataset is set, the First-Run Welcome skill takes over to guide
+onboarding.

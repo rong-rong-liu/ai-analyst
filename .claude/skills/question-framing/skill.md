@@ -8,6 +8,13 @@ Apply this skill when starting any new analysis, when a user asks a vague questi
 
 ## Instructions
 
+### Pre-flight: Load Learnings
+Before executing, check `.knowledge/learnings/index.md` for relevant entries:
+- Read the file. If it doesn't exist or is empty, skip silently.
+- Scan for entries under **"Question Framing"** and **"General"** headings (or related categories like "Business Context", "Methodology Notes").
+- If entries exist, incorporate them as constraints or context for this execution.
+- Never block execution if learnings are unavailable.
+
 ### The Question Ladder
 
 Every analytical question climbs four rungs:

@@ -11,7 +11,7 @@
 
 A complete AI analyst system powered by Claude Code. You ask a business question. Claude frames it, explores your data, finds the root cause, builds a story, and hands you a branded slide deck with speaker notes. The whole thing takes minutes, not days.
 
-Ships with the NovaMart demo dataset. Connect your own data with `/connect-data`.
+Connect your own data with `/connect-data` or use the included example datasets.
 
 **17** specialized agents | **30** auto-applied skills | **14** slash commands | DAG-based parallel execution | PDF + HTML export
 
@@ -59,13 +59,13 @@ claude
 **4. Try it**
 
 ```
-Why is NovaMart's conversion rate declining?
+Why is our conversion rate declining?
 ```
 
 Or go straight to the full pipeline:
 
 ```
-/run-pipeline data_path=data/novamart/ question="Why is conversion dropping?"
+/run-pipeline data_path=data/your_dataset/ question="Why is conversion dropping?"
 ```
 
 For full setup (MotherDuck, MCP connections, troubleshooting): [setup/prerequisites.md](setup/prerequisites.md)
@@ -85,7 +85,7 @@ Claude queries the data and returns an answer with a chart. Simple questions get
 ### 2. Run a full analysis
 
 ```
-/run-pipeline data_path=data/novamart/ question="What's driving the decline in conversion?"
+/run-pipeline data_path=data/your_dataset/ question="What's driving the decline in conversion?"
 ```
 
 The pipeline runs 17 agents across 4 phases: Frame the question, Analyze the data, Build the story, Create the deck. You get a validated analysis, branded charts, a narrative, and a slide deck with speaker notes. Exports to PDF and HTML.
@@ -151,7 +151,7 @@ You don't have to run the whole thing. Five execution plans let you run just the
 | `validate_only` | Check existing work | Validation + Source Tie-Out |
 
 ```
-/run-pipeline data_path=data/novamart/ question="..." plan=deep_dive
+/run-pipeline data_path=data/your_dataset/ question="..." plan=deep_dive
 ```
 
 If the pipeline gets interrupted, resume where you left off:
@@ -163,7 +163,7 @@ If the pipeline gets interrupted, resume where you left off:
 Preview what would run without executing:
 
 ```
-/run-pipeline data_path=data/novamart/ question="..." dry-run=true
+/run-pipeline data_path=data/your_dataset/ question="..." dry-run=true
 ```
 
 ---
@@ -199,12 +199,12 @@ Tier 6 (sequential)           Storytelling --> Deck Creator --> Slide Review -->
 
 | Command | What It Does | Example |
 |---------|-------------|---------|
-| `/run-pipeline` | Full analysis to slide deck | `/run-pipeline data_path=data/novamart/ question="Why is conversion dropping?"` |
+| `/run-pipeline` | Full analysis to slide deck | `/run-pipeline data_path=data/your_dataset/ question="Why is conversion dropping?"` |
 | `/resume-pipeline` | Resume interrupted pipeline | `/resume-pipeline` |
 | `/explore` | Interactive data exploration | `/explore events` |
 | `/data` | Show active dataset schema | `/data users` |
 | `/datasets` | List all connected datasets | `/datasets` |
-| `/switch-dataset` | Change the active dataset | `/switch-dataset novamart` |
+| `/switch-dataset` | Change the active dataset | `/switch-dataset my_dataset` |
 | `/connect-data` | Add a new data source | `/connect-data` |
 | `/metrics` | Browse the metric dictionary | `/metrics conversion_rate` |
 | `/history` | View past analyses | `/history` |
@@ -261,8 +261,7 @@ Your Data --> chart_helpers.py --> Base Chart (150 DPI)
 
 | Dataset | Path | Description |
 |---------|------|-------------|
-| NovaMart | `data/novamart/` | E-commerce analytics: events, users, products. The built-in demo dataset. |
-| Hero | `data/hero/` | Guided exercise dataset |
+| Hero | `data/hero/` | Guided exploration dataset |
 | Examples | `data/examples/` | Curated public datasets with README guides |
 
 ### Connect your own

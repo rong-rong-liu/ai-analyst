@@ -204,7 +204,7 @@ Speaker Notes:
 
 ## Appendix: Methodology & Caveats
 
-- **Data source:** NovaMart analytics warehouse, Jan–Dec 2024
+- **Data source:** {{DISPLAY_NAME}} analytics warehouse, {{DATE_RANGE}}
 - **Cohort definition:** Users with at least one session in the analysis period
 - **Exclusions:** Bot traffic filtered via User-Agent rules (< 0.3% of sessions)
 - **Statistical tests:** Two-proportion z-test for segment comparisons (p < 0.01)

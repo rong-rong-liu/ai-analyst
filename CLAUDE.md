@@ -94,6 +94,14 @@ condition matches -- you do not need to be asked.
 | Semantic Validation | `.claude/skills/semantic-validation/skill.md` | After validation agent — semantic cross-checks on findings |
 | Archive Analysis | `.claude/skills/archive-analysis/skill.md` | End of pipeline — archive analysis results to .knowledge/ |
 | Architect | `.claude/skills/architect/skill.md` | Invoked as `/architect` — multi-persona planning methodology to produce a master plan for a new project or feature |
+| Setup | `.claude/skills/setup/skill.md` | Invoked as `/setup` — interactive interview for profile, data connection, and business context |
+| Setup Dev Context | `.claude/skills/setup-dev-context/skill.md` | Invoked as `/setup-dev-context` — codebase context for dev teams |
+| Feedback Capture | `.claude/skills/feedback-capture/skill.md` | User corrects your work — capture to learnings/corrections system |
+| Log Correction | `.claude/skills/log-correction/skill.md` | Invoked as `/log-correction` — deliberate correction logging |
+| Archaeology | `.claude/skills/archaeology/skill.md` | Before writing SQL — retrieve proven patterns from query archaeology |
+| Business | `.claude/skills/business/skill.md` | Invoked as `/business` — browse organization knowledge (glossary, metrics, products, teams) |
+| Notion Ingest | `.claude/skills/notion-ingest/skill.md` | Invoked as `/notion-ingest` — crawl Notion workspace to extract business context |
+| Runs | `.claude/skills/runs/skill.md` | Invoked as `/runs` — list, inspect, compare, and clean up pipeline runs |
 
 **How skills work:** Read the skill file when triggered and follow its instructions. Multiple skills can apply at once (e.g., Visualization Patterns + Triangulation).
 
@@ -108,32 +116,7 @@ To run an agent:
 2. Substitute the `{{VARIABLES}}` with actual values from the current context
 3. Execute the workflow step by step
 
-### System Variables (auto-resolved)
-| Variable | Value | Used in |
-|----------|-------|---------|
-| `{{DATE}}` | Current date, YYYY-MM-DD | All agent output filenames |
-| `{{DATASET_NAME}}` | Short name derived from data path or user input | File naming, report headers |
-| `{{BUSINESS_CONTEXT_TITLE}}` | Short title derived from `{{BUSINESS_CONTEXT}}` | Question brief header |
-
-| Agent | Path | Invoke When |
-|-------|------|-------------|
-| Question Framing | `agents/question-framing.md` | User provides a business problem to analyze |
-| Hypothesis | `agents/hypothesis.md` | Questions are framed, need testable hypotheses |
-| Data Explorer | `agents/data-explorer.md` | Need to understand what data exists in a source |
-| Descriptive Analytics | `agents/descriptive-analytics.md` | Need to analyze a dataset (segmentation, funnels, drivers) |
-| Overtime / Trend | `agents/overtime-trend.md` | Need time-series analysis or trend identification |
-| Cohort Analysis | `agents/cohort-analysis.md` | Need cohort retention curves, LTV analysis, or vintage comparison |
-| Root Cause Investigator | `agents/root-cause-investigator.md` | Initial analysis found an anomaly — need to drill down iteratively to find the specific root cause |
-| Opportunity Sizer | `agents/opportunity-sizer.md` | Root cause identified or opportunity found — quantify the business impact with sensitivity analysis |
-| Experiment Designer | `agents/experiment-designer.md` | Need to test a causal hypothesis — designs A/B tests or quasi-experimental analyses with power estimation and decision rules |
-| Story Architect | `agents/story-architect.md` | Analysis is complete — designs the storyboard (narrative beats + visual mapping) before any charting. Pass `{{CONTEXT}}` for workshop/talk closing sequences. |
-| Chart Maker | `agents/chart-maker.md` | Need to generate a specific chart. |
-| Visual Design Critic | `agents/visual-design-critic.md` | After Chart Maker generates charts — reviews against SWD checklist. After Deck Creator — reviews slide-level design with `{{DECK_FILE}}` and `{{THEME}}`. |
-| Narrative Coherence Reviewer | `agents/narrative-coherence-reviewer.md` | After Story Architect produces the storyboard, before charting — reviews story flow, beat structure, and Closing beats if present |
-| Storytelling | `agents/storytelling.md` | Analysis and charts are complete, need a narrative |
-| Source Tie-Out | `agents/source-tieout.md` | After Data Explorer, before analysis — verify data loading integrity by comparing pandas direct-read vs DuckDB SQL on foundational metrics. HALT on mismatch. |
-| Validation | `agents/validation.md` | Need to verify findings before presenting |
-| Deck Creator | `agents/deck-creator.md` | Need to create a presentation from analysis. Supports `{{THEME}}` (analytics-dark) and `{{CONTEXT}}` (workshop/talk closing sequence). |
+See `agents/INDEX.md` for the complete list of agents, system variables, and when to invoke each agent.
 
 **Skills vs. agents:** Skills are always active -- they shape everything you do.
 Agents are invoked on demand for specific tasks. Skills define HOW to do things
@@ -201,6 +184,10 @@ When asked to analyze data, follow this process:
 18. **Close the loop** -- Ensure every recommendation has a decision owner,
     success metric, follow-up date, and fallback plan.
     (Use Close-the-Loop skill)
+19. **Draft communications** -- Generate stakeholder-ready communications
+    (Slack summary, email brief, exec summary). Non-critical — pipeline
+    continues if this fails.
+    (Use Comms Drafter agent + Stakeholder Communication skill)
 
 You can skip steps when they do not apply. If the user just wants a chart, go
 straight to Chart Maker. If they want to validate existing work, go straight
@@ -244,7 +231,7 @@ At the start of any analysis, verify data connectivity:
 2. Try the primary connection (e.g., MotherDuck via MCP) — run a simple `SELECT 1` query
 3. If primary fails → try local DuckDB via `manifest.local_data.duckdb` path
 4. If local DuckDB fails → use CSV files via pandas from `manifest.local_data.path`
-5. Always inform the student which source is active
+5. Always inform the user which source is active
 
 Python helpers for source detection and fallback are in `helpers/data_helpers.py`:
 - `detect_active_source()` — reads `.knowledge/active.yaml` + manifest, returns source info
@@ -254,24 +241,11 @@ Python helpers for source detection and fallback are in `helpers/data_helpers.py
 - `list_tables()` — list available CSV tables
 
 ### Local Data Directories
-- `data/hero/` — Hero dataset for guided exercises
 - `data/examples/` — Curated public datasets with README guides
 
 ### Chart Helpers & Style
 
-Reusable visualization utilities based on Cole Nussbaumer Knaflic's *Storytelling with Data* methodology:
-
-| File | Purpose |
-|------|---------|
-| `helpers/chart_helpers.py` | Core: `swd_style()`, `highlight_bar()`, `highlight_line()`, `action_title()`, `annotate_point()`, `save_chart()`. Advanced: `stacked_bar()`, `add_trendline()`, `add_event_span()`, `fill_between_lines()`, `big_number_layout()`, `retention_heatmap()`. Analytical: `sensitivity_table()`, `funnel_waterfall()` |
-| `helpers/tieout_helpers.py` | Source tie-out: `read_source_direct()` (pandas-only file reader), `profile_dataframe()` (row count, nulls, sums, distinct counts, date ranges), `compare_profiles()` (dual-path comparison with tolerances), `format_tieout_table()`, `overall_status()` |
-| `helpers/analytics_chart_style.mplstyle` | Matplotlib style file — warm off-white bg (#F7F6F2), no top/right spines, no grid, sans-serif, 150 DPI |
-| `helpers/chart_style_guide.md` | Full SWD reference: color palette, declutter checklist, chart decision tree, anti-patterns, review checklist |
-| `helpers/sql_helpers.py` | SQL sanity checks: `check_join_cardinality()`, `check_percentages_sum()`, `check_date_bounds()`, `check_no_duplicates()`, `warn_temporal_join()`. DQ extensions: `check_temporal_coverage()`, `check_value_domain()`, `check_monotonic()` + safe wrappers |
-| `helpers/stats_helpers.py` | Statistical tests: `two_sample_proportion_test()`, `two_sample_mean_test()`, `mann_whitney_test()`, `confidence_interval()`, `chi_squared_test()`, `bootstrap_ci()`, `format_significance()`, `interpret_effect_size()` |
-| `helpers/data_helpers.py` | Data source access: `detect_active_source()`, `check_connection()`, `get_local_connection()`, `read_table()`, `list_tables()`, `get_data_source_info()`. Profiling: `get_connection_for_profiling()`, `schema_to_markdown()` |
-| `helpers/error_helpers.py` | Student-friendly errors: `friendly_error()`, `safe_query()`, `check_empty_dataframe()`, `suggest_column()` |
-| `helpers/examples/` | 4 before/after pairs showing bar, stacked bar, line, and multi-panel transformations |
+See `helpers/INDEX.md` for the complete list of helper modules and their functions.
 
 ---
 
@@ -323,19 +297,23 @@ These are non-negotiable. They protect analytical quality.
 
 13. **Run 4-layer validation before presenting findings.** Every analysis must pass structural (schema/PK/completeness), logical (aggregation/trend consistency), business rules (plausibility), and Simpson's paradox checks via the Validation agent. Include the confidence badge (A-F grade) in the executive summary. HALT on any BLOCKER.
 
+14. **Capture feedback as learnings.** When a user corrects your work or provides methodology guidance, automatically capture it to the learnings system. Use the Feedback Capture skill on every correction or "you should have..." statement.
+
+15. **Check corrections before writing SQL.** Before generating SQL for any analysis, check `.knowledge/corrections/index.yaml` for logged corrections matching the current dataset and table. Apply known fixes proactively — never repeat the same SQL mistake twice.
+
 ---
 
 ## When Things Go Wrong
 
 | Problem | What to Do |
 |---------|-----------|
-| MotherDuck won't connect | Fall back to local DuckDB/CSVs automatically (see Data Source Fallback). Inform the student. |
-| SQL query errors | Simplify the query. If JOIN fails, try subquery. If aggregation fails, check GROUP BY. Show the student what went wrong. |
+| MotherDuck won't connect | Fall back to local DuckDB/CSVs automatically (see Data Source Fallback). Inform the user. |
+| SQL query errors | Simplify the query. If JOIN fails, try subquery. If aggregation fails, check GROUP BY. Show the user what went wrong. |
 | Chart won't render | Save the data table as fallback. Try a simpler chart type. If matplotlib fails entirely, produce a text summary. |
 | Source tie-out fails | HALT. Do not proceed with analysis. Show the mismatch. Ask: "Should we investigate the data issue or proceed with caution?" |
 | Context getting long | After completing the analysis phase (steps 1-8), check conversation length. If >15 queries were run, save all working files and suggest: "/resume-pipeline to continue in a fresh session." |
-| Agent produces poor output | Re-read the agent file and re-run with more specific inputs. If it fails a second time, switch to manual collaborative mode with the student. |
-| Student's data doesn't match expected schema | Agent references a column/table that doesn't exist — check the data inventory, adjust queries to match the actual schema. |
+| Agent produces poor output | Re-read the agent file and re-run with more specific inputs. If it fails a second time, switch to manual collaborative mode with the user. |
+| User's data doesn't match expected schema | Agent references a column/table that doesn't exist — check the data inventory, adjust queries to match the actual schema. |
 
 ---
 
@@ -347,7 +325,7 @@ Choose your Claude Code session model based on your task:
 |----------|------------------|-------|
 | Quick data pull or single chart | Sonnet | Steps 1, 4, 4.5, answer |
 | Deep analysis (no deck) | Sonnet or Opus | Steps 1-8 |
-| Full pipeline (analysis + deck) | Opus | All 18 steps — reasoning-intensive |
+| Full pipeline (analysis + deck) | Opus | All 19 steps — reasoning-intensive |
 | Learning / exploring data | Sonnet | Ad hoc questions, profiling |
 
 Agents run at your session's model tier. Opus for reasoning-intensive work, Sonnet for data pulls.

@@ -13,14 +13,14 @@ Usage:
     tracker.record(
         step=1,
         agent="data-explorer",
-        inputs=["data/novamart/orders.csv"],
+        inputs=["data/your_dataset/orders.csv"],
         outputs=["working/data_inventory.md"],
         metadata={"tables_scanned": 5},
     )
     tracker.record(
         step=5,
         agent="descriptive-analytics",
-        inputs=["working/data_inventory.md", "data/novamart/orders.csv"],
+        inputs=["working/data_inventory.md", "data/your_dataset/orders.csv"],
         outputs=["working/analysis_descriptive.md"],
         metadata={"row_count": 45000},
     )

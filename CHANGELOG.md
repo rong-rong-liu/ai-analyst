@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - 17 specialized analysis agents with DAG-based parallel execution
 - 30 auto-applied skills (question framing, data quality, visualization, validation)
 - 14 slash commands for interactive use
-- NovaMart demo dataset (13 tables, 50K users, 6.5M events)
+- Example e-commerce dataset schema (13 tables)
 - Tiered data system: Tier 1 in git, Tier 2 via GitHub Releases
 - Setup scripts: `setup.sh`, `download-data.sh`, `build-duckdb.sh`
 - Multi-warehouse support: DuckDB, MotherDuck, Postgres, BigQuery, Snowflake

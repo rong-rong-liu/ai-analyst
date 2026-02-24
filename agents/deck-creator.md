@@ -158,7 +158,7 @@ theme: analytics
 size: 16:9
 paginate: true
 html: true
-footer: "AI Analyst Lab | NovaMart | February 2026"
+footer: "AI Analyst Lab | {{DISPLAY_NAME}} | February 2026"
 ---
 
 <!-- _class: insight -->

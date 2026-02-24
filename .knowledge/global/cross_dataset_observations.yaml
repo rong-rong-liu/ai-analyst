@@ -13,7 +13,7 @@ observations: []
 #     datasets: [dataset_a, dataset_b]
 #     description: "One sentence describing the observation"
 #     evidence:
-#       - dataset_id: "novamart"
+#       - dataset_id: "dataset_a"
 #         source: "analysis_20260216_143000"
 #         detail: "Conversion rate at 3.2%"
 #       - dataset_id: "other_dataset"

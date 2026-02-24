@@ -8,6 +8,13 @@ Apply this skill whenever generating a chart, graph, or data visualization. Alwa
 
 ## Instructions
 
+### Pre-flight: Load Learnings
+Before executing, check `.knowledge/learnings/index.md` for relevant entries:
+- Read the file. If it doesn't exist or is empty, skip silently.
+- Scan for entries under **"Chart Style"** and **"General"** headings (or related categories like "Visualization Insights").
+- If entries exist, incorporate them as constraints for this execution (e.g., preferred chart types, color overrides, annotation preferences).
+- Never block execution if learnings are unavailable.
+
 ### Core Principle: Storytelling with Data (SWD)
 
 Every chart follows the SWD methodology by Cole Nussbaumer Knaflic:

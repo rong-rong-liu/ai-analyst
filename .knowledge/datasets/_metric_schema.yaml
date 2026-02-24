@@ -1,123 +1,32 @@
-# Metric Definition Schema
-# Defines the structure for metric YAML files in .knowledge/datasets/{name}/metrics/.
-# Used by the /metrics skill and metric-spec skill for validation.
+# Metric Definition Schema — template for dataset metric YAML files
+# Each dataset can have metrics in .knowledge/datasets/{name}/metrics/
+schema_version: 1
 
-required_fields:
-  - name: id
-    type: string
-    description: "Unique metric identifier (snake_case, e.g., 'conversion_rate')"
+# Required fields:
+#   name: string — metric identifier (snake_case)
+#   display_name: string — human-readable name
+#   definition: string — precise calculation definition
+#   sql_template: string — SQL expression or query fragment
+#   grain: string — what each row represents
 
-  - name: name
-    type: string
-    description: "Human-readable metric name"
+# Optional fields:
+#   owner: string — team or person responsible
+#   target: number — target value
+#   guardrails: list[string] — related metrics to check for trade-offs
+#   segments: list[string] — common segmentation dimensions
+#   caveats: list[string] — known data quality issues or gotchas
+#   added_at: datetime
+#   last_validated: datetime
+#   status: active | deprecated | draft
 
-  - name: category
-    type: string
-    enum: [acquisition, activation, engagement, retention, monetization, conversion, satisfaction, operational]
-    description: "AARRR-aligned category or operational"
-
-  - name: definition
-    type: object
-    fields:
-      - name: description
-        type: string
-        required: true
-        description: "Plain-English definition of what this metric measures"
-      - name: formula
-        type: string
-        required: true
-        description: "How to compute it (human-readable math)"
-      - name: unit
-        type: string
-        enum: [percentage, count, currency_usd, ratio, score, duration_seconds, duration_days]
-        required: true
-      - name: direction
-        type: string
-        enum: [higher_is_better, lower_is_better, target_range]
-        required: true
-      - name: granularity
-        type: string
-        enum: [realtime, hourly, daily, weekly, monthly, quarterly, weekly_cohort, monthly_cohort]
-        required: true
-
-  - name: source
-    type: object
-    fields:
-      - name: tables
-        type: list
-        required: true
-        description: "Tables needed to compute this metric"
-
-optional_fields:
-  - name: owner
-    type: string
-    description: "Team or role responsible for this metric"
-
-  - name: source.join
-    type: string
-    description: "Join condition between tables"
-
-  - name: source.numerator_sql
-    type: string
-    description: "SQL expression for the numerator"
-
-  - name: source.denominator_sql
-    type: string
-    description: "SQL expression for the denominator (ratio metrics)"
-
-  - name: source.filter
-    type: string
-    description: "WHERE clause filter"
-
-  - name: source.notes
-    type: string
-    description: "Implementation notes or caveats"
-
-  - name: dimensions
-    type: list
-    description: "Columns this metric can be sliced by"
-
-  - name: guardrails
-    type: list
-    description: "Related metrics to monitor as guardrails"
-    item_fields:
-      - name: metric
-        type: string
-      - name: direction
-        type: string
-
-  - name: typical_range
-    type: object
-    description: "Expected value range for plausibility checks"
-    fields:
-      - name: min
-        type: number
-      - name: max
-        type: number
-
-  - name: validation_status
-    type: string
-    enum: [seed, validated, stale]
-    description: "Whether this metric has been validated against actual data"
-
-  - name: last_validated
-    type: string
-    description: "ISO date of last validation"
-
-  - name: dq_status
-    type: object
-    description: "Data quality validation status from confidence_scoring.py"
-    fields:
-      - name: confidence_score
-        type: number
-        description: "0-100 confidence score from last validation"
-      - name: grade
-        type: string
-        enum: [A, B, C, D, F]
-        description: "Letter grade from confidence scoring"
-      - name: flags
-        type: list
-        description: "Active quality flags (e.g., 'high_null_rate', 'simpsons_paradox_risk')"
-      - name: last_scored
-        type: string
-        description: "ISO date of last confidence scoring run"
+# Example:
+# name: conversion_rate
+# display_name: "Conversion Rate"
+# definition: "Users who completed purchase / Users who viewed product page"
+# sql_template: "COUNT(DISTINCT CASE WHEN purchased THEN user_id END) * 1.0 / COUNT(DISTINCT user_id)"
+# grain: "user-session"
+# owner: "Growth Team"
+# target: 0.035
+# guardrails: ["aov", "cart_abandonment_rate"]
+# segments: ["device_type", "traffic_source", "user_cohort"]
+# caveats: ["Excludes internal test accounts", "Bot traffic filtered by UA"]

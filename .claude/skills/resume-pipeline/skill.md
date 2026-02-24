@@ -12,18 +12,52 @@ Invoke as `/resume-pipeline` when:
 
 ## Instructions
 
-### Step 1: Read pipeline state
+### Step 1: Locate pipeline state (per-run directory aware)
 
-Check for `working/pipeline_state.json`:
-- If it exists → read it and proceed to Step 2
-- If it does NOT exist → fall back to artifact scanning (Step 1b)
+Search for the most recent pipeline state in this order:
 
-**Pipeline state fields to extract:**
-- `pipeline_id` — identifies this run
-- `dataset` — active dataset
-- `question` — the business question
-- `status` — `running`, `paused`, or `failed`
-- `steps` — map of step statuses (completed, running, pending, failed, skipped)
+1. **Per-run directory (preferred):** Check `working/latest/pipeline_state.json` (symlink to latest run).
+   If found, set `RUN_DIR` from the symlink target and proceed to Step 2.
+2. **Specific run:** If the user passed a run ID (e.g., `/resume-pipeline 2026-02-23_acme-analytics_why-revenue-dropped`),
+   look in `working/runs/{id}/pipeline_state.json`. Set `RUN_DIR` accordingly.
+3. **Legacy location:** Check `working/pipeline_state.json` (pre-run-directory pipelines).
+   If found, read it and proceed to Step 2 without a `RUN_DIR`.
+4. **No state found:** Fall back to artifact scanning (Step 1b).
+
+**Pipeline state fields to extract (V2):**
+- `run_id` -- identifies this run
+- `run_dir` -- per-run directory path (may be absent for legacy runs)
+- `dataset` -- active dataset
+- `question` -- the business question
+- `status` -- `running`, `paused`, or `failed`
+- `agents` -- map of agent-name to agent state (status, output_file, timestamps)
+
+### Step 1a: V1-to-V2 state migration
+
+After loading the state file and before any processing, check whether the state
+uses the V1 (step-number keyed) format and migrate it to V2 if needed.
+
+```python
+from helpers.pipeline_state import detect_schema_version, migrate_v1_to_v2
+
+if detect_schema_version(state) < 2:
+    # Resolve dataset from active.yaml or fall back to "unknown"
+    dataset = state.get("dataset") or resolve_active_dataset() or "unknown"
+    state = migrate_v1_to_v2(state, dataset=dataset)
+    # Write migrated state back to disk (same location it was read from)
+    write_pipeline_state(state_path, state)
+    print("Migrated pipeline state from V1 -> V2 format")
+```
+
+**Migration details** (handled by `helpers/pipeline_state.py`):
+- `pipeline_id` (ISO timestamp) -> `started_at`; generate `run_id` from date + dataset + question slug
+- `steps.{n}.agent` keys -> `agents.{agent_name}` keys
+- `steps.{n}.output_files[0]` -> `agents.{name}.output_file` (take first)
+- Status values are preserved as-is (compatible between V1 and V2)
+- Adds `schema_version: 2` and `updated_at` set to current time
+- If any V1 step had `status: running`, it becomes `paused` at the pipeline level (was interrupted)
+
+After migration, continue with the V2 fields listed above.
 
 ### Step 1b: Artifact-based fallback (no pipeline_state.json)
 
@@ -51,11 +85,11 @@ Walk the list top to bottom. If an artifact exists and looks complete (not empty
 ### Step 2: Compute READY set from DAG
 
 1. Read `agents/registry.yaml` to build the dependency graph
-2. For each agent in the registry:
-   - If its status is `completed` or `skipped` in the state → leave it
-   - If its status is `failed` → reset to `pending` (will be retried)
-   - If its status is `running` → reset to `pending` (was interrupted)
-3. Compute READY agents: those with `status: pending` whose every dependency is `completed`
+2. For each agent in the registry, check `state["agents"][agent_name]["status"]`:
+   - If status is `complete`, `skipped`, or `degraded` → leave it
+   - If status is `failed` → reset to `pending` (will be retried)
+   - If status is `in_progress` or `running` → reset to `pending` (was interrupted)
+3. Compute READY agents: those with `status: pending` whose every dependency is `complete`
 
 ### Step 3: Build context summary
 
@@ -72,7 +106,7 @@ Compile into a context block for the resumed session.
 Display:
 
 ```
-Resuming pipeline {pipeline_id}
+Resuming pipeline {run_id}
 
 Completed agents: {count}
   - {agent_name}: {one-line summary from outputs}

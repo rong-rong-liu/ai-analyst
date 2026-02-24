@@ -1,31 +1,12 @@
-# Pattern Library — Auto-extracted from archived analyses
-# Updated by the pattern extraction engine after each analysis archive.
-#
-# Patterns are recurring themes, behaviors, or data characteristics
-# observed across multiple analyses on a dataset. They help the system
-# learn from past work and provide richer context for new analyses.
-
-dataset_id: null  # null = global patterns, or a specific dataset ID
-last_updated: null
-total_patterns: 0
-
+# Analysis Patterns — recurring analytical patterns detected across analyses
+# Populated by the patterns skill after 3+ analyses
+schema_version: 1
 patterns: []
-
-# Pattern schema:
-#   - id: pattern_{YYYYMMDD}_{HHMMSS}
-#     type: behavioral | structural | seasonal | anomaly | segment
-#     description: "One sentence describing the pattern"
-#     evidence:
-#       - analysis_id: "analysis_20260216_143000"
-#         finding: "Mobile conversion consistently 2x desktop"
-#       - analysis_id: "analysis_20260218_091500"
-#         finding: "Mobile conversion gap widened to 2.3x"
-#     first_seen: "2026-02-16"
-#     last_seen: "2026-02-18"
-#     occurrences: 2
-#     confidence: high | medium | low
-#     dimensions: [device_type]
-#     metrics: [conversion_rate]
-#     tags: [mobile, conversion, segment-gap]
-#     actionable: true
-#     suggested_investigation: "Why does mobile convert higher? UX differences? Intent differences?"
+# Entry format:
+#   - id: "PAT-001"
+#     pattern: "Seasonal Q4 revenue spike"
+#     frequency: 3
+#     datasets: ["ecommerce_prod"]
+#     first_seen: "2026-01-15"
+#     description: "Revenue shows consistent 15-20% uplift in Q4"
+#     implication: "Normalize YoY comparisons by removing Q4 effect"

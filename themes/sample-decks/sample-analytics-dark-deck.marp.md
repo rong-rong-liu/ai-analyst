@@ -14,7 +14,7 @@ footer: "AI Analyst Lab | Sample Dark Deck | aianalystlab.ai"
 # Mobile conversion dropped 18% in Q3
 Erasing gains from the app redesign
 
-NovaMart Product Analytics | Q3 2025
+Product Analytics | Q3 2025
 
 <!--
 Speaker Notes:
@@ -43,7 +43,7 @@ Speaker Notes:
   </div>
 </div>
 
-<div class="data-source">Source: NovaMart orders + sessions tables | Jul-Sep 2025</div>
+<div class="data-source">Source: Orders + sessions tables | Jul-Sep 2025</div>
 
 <!--
 Speaker Notes:
@@ -57,7 +57,7 @@ Speaker Notes:
 <div class="chart-container">
   <div class="chart-title">Conversion Rate by Device, Weekly (Q2-Q3 2025)</div>
   <div style="height: 280px; display: flex; align-items: center; justify-content: center; color: var(--dk-text-muted); font-style: italic;">[Chart: Line chart showing mobile drop after Aug 12, desktop stable]</div>
-  <div class="chart-source">Source: novamart.sessions + novamart.orders</div>
+  <div class="chart-source">Source: {schema}.sessions + {schema}.orders</div>
 </div>
 
 <div class="so-what">The drop correlates precisely with the iOS 18 rollout (Aug 12). Desktop unaffected. This is not a seasonal pattern.</div>
@@ -202,7 +202,7 @@ Speaker Notes:
 | **Checkout Start** | 8.4% | 7.9% | -6% |
 | **Payment Complete** | 3.8% | 3.1% | -18% |
 
-<div class="data-source">Source: NovaMart funnel analysis | Q2-Q3 2025</div>
+<div class="data-source">Source: Funnel analysis | Q2-Q3 2025</div>
 
 <!--
 Speaker Notes:

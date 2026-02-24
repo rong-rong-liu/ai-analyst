@@ -377,7 +377,7 @@ def profile_source(connection_info=None):
                 })
     else:
         # CSV path
-        csv_dir = connection_info.get("csv_dir", "data/novamart/")
+        csv_dir = connection_info.get("csv_dir", "data/")
         for table_name in tables_list:
             try:
                 table_profile = _profile_table_csv(csv_dir, table_name)
@@ -816,8 +816,8 @@ def get_table_reference(table_name, schema=None):
     Returns:
         dict:
         {
-            "qualified_name": str (e.g., "novamart.orders"),
-            "schema": str (e.g., "novamart"),
+            "qualified_name": str (e.g., "my_dataset.orders"),
+            "schema": str (e.g., "my_dataset"),
             "table": str (e.g., "orders"),
             "connection_type": str (e.g., "motherduck"),
             "exists": bool (True if table is in the dataset's known tables),

@@ -78,6 +78,36 @@ charts, narrative, and Marp deck.
 
 ## Classification Algorithm
 
+### Step 0: Pre-flight (runs on every query before classification)
+
+Enrichment steps — never block routing. If any sub-step fails, skip it silently.
+
+1. **Feedback check** — The Feedback Capture skill runs BEFORE this router.
+   By the time a message reaches here, corrections/learnings are already
+   captured. If the message was purely feedback (no analytical question),
+   it was handled upstream — skip routing.
+
+2. **Entity disambiguation** — If the entity index is loaded (from bootstrap):
+   - Call `resolve_entity(query_text, entity_index)` from
+     `helpers/entity_resolver.py`.
+   - If matches found, call `format_disambiguation(matches)` and set
+     `{{RESOLVED_ENTITIES}}` for downstream agents.
+   - Example: "why is cvr dropping?" → Resolved: 'cvr' -> conversion_rate (metric)
+   - If entity index unavailable or no matches, leave `{{RESOLVED_ENTITIES}}` empty.
+
+3. **Corrections check** — Read `.knowledge/corrections/index.yaml`.
+   - If `total_corrections > 0` for the active dataset, set
+     `{{CORRECTION_COUNT}}` so analysis agents check the correction log
+     before writing SQL (e.g., known join pitfalls, filter requirements).
+   - If index is missing or `total_corrections` is 0, set
+     `{{CORRECTION_COUNT}}` to 0.
+
+4. **Archaeology note** — The Query Archaeology skill provides SQL pattern
+   context (prior queries, reusable CTEs) to analysis agents when available.
+   No action needed here — just acknowledge it flows downstream automatically.
+
+After pre-flight completes, proceed to Step 1.
+
 ### Step 1: Parse the question
 
 Extract:
@@ -146,7 +176,7 @@ by setting the entry point in the Default Workflow:
 Before classifying, check whether the question references a dataset other than
 the currently active one.
 
-### Step 0: Scan for dataset references
+### Scan for dataset references
 
 1. Read `.knowledge/datasets/` to get all known dataset IDs and display names.
 2. Scan the user's question for exact or fuzzy matches to any dataset name.

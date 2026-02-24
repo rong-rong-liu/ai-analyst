@@ -1,69 +1,20 @@
 # Analysis Archive Entry Schema
-# Defines the structure of each analysis entry in index.yaml.
-# Used by archive-analysis skill to validate entries.
+# Each completed analysis gets an entry in index.yaml following this structure
+schema_version: 1
 
-required_fields:
-  - name: id
-    type: string
-    format: "analysis_YYYYMMDD_HHMMSS"
-    description: "Unique identifier, auto-generated from timestamp"
+# Required fields:
+#   id: string — unique analysis ID (e.g., "AN-001")
+#   title: string — descriptive title
+#   date: date — when the analysis was completed
+#   dataset: string — which dataset was analyzed
+#   question: string — the business question addressed
+#   status: completed | in_progress | abandoned
 
-  - name: title
-    type: string
-    max_length: 100
-    description: "Short descriptive title of the analysis"
-
-  - name: dataset_id
-    type: string
-    description: "Dataset ID from .knowledge/active.yaml at time of analysis"
-
-  - name: date
-    type: string
-    format: "YYYY-MM-DD"
-    description: "Date the analysis was completed"
-
-  - name: question_level
-    type: string
-    enum: [L1, L2, L3, L4, L5]
-    description: "Question Router classification level"
-
-  - name: question
-    type: string
-    description: "The original business question"
-
-  - name: key_findings
-    type: list
-    min_items: 1
-    max_items: 5
-    description: "Top findings, one sentence each"
-
-optional_fields:
-  - name: metrics_used
-    type: list
-    description: "Metric IDs from the metric dictionary that were referenced"
-
-  - name: agents_used
-    type: list
-    description: "Agent names that were invoked during the analysis"
-
-  - name: output_files
-    type: list
-    description: "Paths to output files (analyses, charts, decks)"
-
-  - name: tags
-    type: list
-    description: "Free-form tags for search and filtering"
-
-  - name: confidence
-    type: float
-    range: [0, 1]
-    description: "Overall confidence score from the validation agent"
-
-  - name: recommendations
-    type: list
-    description: "Action items from close-the-loop"
-
-  - name: follow_up_status
-    type: string
-    enum: [pending, in_progress, completed, cancelled]
-    description: "Status of recommended follow-up actions"
+# Optional fields:
+#   findings: list[string] — key findings (1-3 sentences each)
+#   confidence: string — A-F grade from validation
+#   artifacts: list[string] — paths to output files
+#   tags: list[string] — categorization tags
+#   follow_up: list[string] — questions raised for future investigation
+#   stakeholders: list[string] — who received the results
+#   decision_made: string — what decision was informed

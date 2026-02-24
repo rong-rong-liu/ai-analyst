@@ -1,3 +1,0 @@
-experiment_id,experiment_name,hypothesis,primary_metric,guardrail_metrics,start_date,end_date,status
-1,save_for_later_visibility,Increasing visibility of Save for Later will increase 30-day purchase rate by 15%,purchase_rate,"aov,support_tickets,page_load",2024-08-01,2024-09-30,completed
-2,checkout_redesign,Simplified mobile checkout will increase mobile checkout conversion by 10%,checkout_conversion,"aov,support_tickets,page_load",2024-11-20,2024-12-31,completed

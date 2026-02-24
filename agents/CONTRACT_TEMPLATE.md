@@ -153,6 +153,16 @@ CONTRACT_END -->
 | `depends_on` | Yes | List of agent names that must complete before this one runs. Can be empty (`depends_on: []`). |
 | `pipeline_step` | Yes | Numeric position in the 18-step pipeline (see CLAUDE.md Default Workflow). Use `null` for standalone agents not part of the pipeline. Parallel agents share a step number. |
 | `knowledge_context` | Yes | List of `.knowledge/` file paths to load before running. Use `{active}` as a placeholder for the current dataset name. Can be empty (`knowledge_context: []`). |
+| `critical` | No | Boolean. Default: `true`. When `false`, the agent uses **warn_on_failure** degradation: if it fails, the pipeline logs a warning and continues with `status: degraded` instead of halting. Use for review/sizing agents where failure is not blocking. |
+| `depends_on_any` | No | OR-dependency list. At least one named agent must complete before this agent runs. Contrast with `depends_on` (AND -- all must complete). If both fields are present, all AND deps plus at least one OR dep must be satisfied. |
+
+### `warn_on_failure` Behavior
+
+When a non-critical agent (`critical: false`) fails:
+1. Pipeline sets the agent's status to `degraded` (not `failed`).
+2. A warning is logged with the error message.
+3. Downstream agents that depend on the degraded agent receive a `DEGRADED_UPSTREAM` flag in their context so they can adapt (e.g., skip optional sections).
+4. The pipeline continues -- it does **not** halt.
 
 ## Input Source Types
 

@@ -56,6 +56,29 @@ Findings: {count} key findings captured
 Use `/history` to browse past analyses.
 ```
 
+### Step 6: Capture to Query Archaeology (Optional)
+
+After archiving, check if the analysis produced reusable patterns worth saving
+to `.knowledge/query-archaeology/curated/` via `helpers/archaeology_helpers.py`.
+
+1. **SQL patterns** — If validated SQL queries could be reused for future analyses:
+   - Offer to capture via `capture_cookbook_entry(title, sql, dataset, tables, tags)`
+   - Only capture queries that passed tie-out or validation checks
+
+2. **Table knowledge** — If the analysis revealed useful table metadata:
+   - Offer to capture/update via `capture_table_cheatsheet(table_name, dataset, grain, primary_key, common_filters, gotchas, common_joins)`
+   - Include grain, primary key, common filters, gotchas, and common joins
+
+3. **Join patterns** — If the analysis used non-obvious joins:
+   - Offer to capture via `capture_join_pattern(tables, join_sql, cardinality, validated, dataset)`
+   - Record cardinality and whether the join was validated
+
+**Rules for this step:**
+- Ask the user: "Would you like to save any SQL patterns from this analysis?"
+- If the user declines or there are no reusable patterns, skip silently
+- Only capture patterns from analyses with confidence grade B or better
+- Never auto-capture without user confirmation
+
 ## Rules
 1. Never overwrite an existing archive entry — always append
 2. Key findings should be one sentence each, factual, with numbers

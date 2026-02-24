@@ -9,7 +9,7 @@ analyses: []
 # Format for each entry:
 #   - id: "analysis_YYYYMMDD_HHMMSS"
 #     title: "Why Q3 activation dropped"
-#     dataset_id: novamart
+#     dataset_id: my_dataset
 #     date: "2026-02-16"
 #     question_level: L5
 #     question: "What caused the 15% drop in activation rate in Q3?"

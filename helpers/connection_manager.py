@@ -109,8 +109,12 @@ class ConnectionManager:
                 "csv_path": source.get("csv_path"),
                 "connection": source.get("connection", {}),
             }
-        except Exception:
-            return {"type": "csv", "dataset_id": "unknown", "csv_path": "data/novamart/"}
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to load dataset config — no active dataset found. "
+                "Use /connect-data to configure a dataset, or pass a config dict "
+                f"to ConnectionManager directly. Original error: {exc}"
+            )
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -363,7 +367,12 @@ class ConnectionManager:
 
     def _connect_csv(self):
         """Set up CSV-based access."""
-        csv_path = self._config.get("csv_path", "data/novamart/")
+        csv_path = self._config.get("csv_path")
+        if not csv_path:
+            raise ConnectionError(
+                "No csv_path configured for CSV connection. "
+                "Set csv_path in the dataset manifest or pass it in the config dict."
+            )
         self._csv_dir = csv_path
         self._conn_type = "csv"
 

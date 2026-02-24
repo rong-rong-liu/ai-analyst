@@ -14,18 +14,17 @@ Usage:
 
     # Auto-detect active source
     source = detect_active_source()
-    # source = {"source": "novamart", "type": "csv", "path": "data/novamart/", ...}
 
     # DuckDB path
-    conn = get_local_connection()
+    conn = get_local_connection("path/to/your.duckdb")
     if conn:
         df = conn.sql("SELECT * FROM orders LIMIT 10").df()
 
     # CSV fallback
-    df = read_table("orders")
+    df = read_table("orders", data_dir="data/your_dataset/")
 
     # Discovery
-    tables = list_tables()
+    tables = list_tables("data/your_dataset/")
     info = get_data_source_info()
 """
 
@@ -51,20 +50,20 @@ except ImportError:
 # Default paths (relative to project root)
 # ---------------------------------------------------------------------------
 
-_DEFAULT_DUCKDB_PATH = "data/novamart/novamart_practice.duckdb"
-_DEFAULT_DATA_DIR = "data/novamart/"
+_DEFAULT_DUCKDB_PATH = None  # Set via manifest.yaml or detect_active_source()
+_DEFAULT_DATA_DIR = None  # Set via manifest.yaml or detect_active_source()
 
 
 # ---------------------------------------------------------------------------
 # DuckDB connection
 # ---------------------------------------------------------------------------
 
-def get_local_connection(duckdb_path=_DEFAULT_DUCKDB_PATH):
+def get_local_connection(duckdb_path=None):
     """Open a read-only connection to a local DuckDB file.
 
     Args:
         duckdb_path: Path to the DuckDB file, relative to the repo root.
-            Defaults to ``data/novamart/novamart_practice.duckdb``.
+            If None, attempts to resolve from the active dataset manifest.
 
     Returns:
         duckdb.Connection if the file exists and the connection succeeds,
@@ -76,6 +75,14 @@ def get_local_connection(duckdb_path=_DEFAULT_DUCKDB_PATH):
             "Install it with: pip install duckdb"
         )
         return None
+
+    if duckdb_path is None:
+        # Try to resolve from active dataset
+        source = detect_active_source()
+        duckdb_path = source.get("duckdb_path")
+        if duckdb_path is None:
+            print("[data_helpers] No DuckDB path configured. Use /connect-data to set up a dataset.")
+            return None
 
     path = Path(duckdb_path)
     if not path.exists():
@@ -100,7 +107,7 @@ def get_local_connection(duckdb_path=_DEFAULT_DUCKDB_PATH):
 # CSV table access
 # ---------------------------------------------------------------------------
 
-def read_table(table_name, data_dir=_DEFAULT_DATA_DIR):
+def read_table(table_name, data_dir=None):
     """Read a table from a CSV file in the data directory.
 
     Maps *table_name* to ``{data_dir}/{table_name}.csv`` and reads it into a
@@ -109,8 +116,8 @@ def read_table(table_name, data_dir=_DEFAULT_DATA_DIR):
     Args:
         table_name: Table name (e.g. ``"orders"``). Do not include the
             ``.csv`` extension.
-        data_dir: Directory containing the CSV files. Defaults to
-            ``data/novamart/``.
+        data_dir: Directory containing the CSV files. If None, resolves
+            from the active dataset manifest.
 
     Returns:
         pandas.DataFrame
@@ -119,6 +126,15 @@ def read_table(table_name, data_dir=_DEFAULT_DATA_DIR):
         FileNotFoundError: If the CSV file does not exist — includes a
             helpful message listing available tables.
     """
+    if data_dir is None:
+        source = detect_active_source()
+        data_dir = source.get("csv_path")
+        if data_dir is None:
+            raise FileNotFoundError(
+                f"Table '{table_name}' not found: no data directory configured.\n"
+                "  Use /connect-data to set up a dataset."
+            )
+
     csv_path = Path(data_dir) / f"{table_name}.csv"
 
     if not csv_path.exists():
@@ -140,16 +156,22 @@ def read_table(table_name, data_dir=_DEFAULT_DATA_DIR):
 # Table discovery
 # ---------------------------------------------------------------------------
 
-def list_tables(data_dir=_DEFAULT_DATA_DIR):
+def list_tables(data_dir=None):
     """List available table names from CSV files in *data_dir*.
 
     Args:
-        data_dir: Directory to scan. Defaults to ``data/novamart/``.
+        data_dir: Directory to scan. If None, resolves from active dataset.
 
     Returns:
         Sorted list of table names (filenames without the ``.csv`` extension).
         Returns an empty list if the directory does not exist.
     """
+    if data_dir is None:
+        source = detect_active_source()
+        data_dir = source.get("csv_path")
+        if data_dir is None:
+            return []
+
     dir_path = Path(data_dir)
     if not dir_path.is_dir():
         return []
@@ -162,8 +184,8 @@ def list_tables(data_dir=_DEFAULT_DATA_DIR):
 # ---------------------------------------------------------------------------
 
 def get_data_source_info(
-    duckdb_path=_DEFAULT_DUCKDB_PATH,
-    data_dir=_DEFAULT_DATA_DIR,
+    duckdb_path=None,
+    data_dir=None,
 ):
     """Return a dict describing the current data source status.
 
@@ -182,7 +204,7 @@ def get_data_source_info(
     """
     csv_tables = list_tables(data_dir)
 
-    duckdb_ok = _DUCKDB_AVAILABLE and Path(duckdb_path).exists()
+    duckdb_ok = _DUCKDB_AVAILABLE and duckdb_path is not None and Path(duckdb_path).exists()
 
     return {
         "duckdb_available": duckdb_ok,
@@ -210,7 +232,7 @@ def detect_active_source():
 
     Returns:
         dict with keys:
-            source (str): Dataset ID (e.g., "novamart").
+            source (str): Dataset ID (e.g., "my_dataset").
             display_name (str): Human-readable name.
             type (str): "motherduck", "duckdb", or "csv".
             schema_prefix (str): SQL schema prefix for queries.
@@ -251,8 +273,7 @@ def detect_active_source():
     elif source_info["csv_path"] and Path(source_info["csv_path"]).is_dir():
         source_info["type"] = "csv"
     else:
-        source_info["type"] = "csv"
-        source_info["csv_path"] = _DEFAULT_DATA_DIR
+        source_info["type"] = "none"
 
     return source_info
 
@@ -290,10 +311,10 @@ def _fallback_source(dataset_id):
     return {
         "source": dataset_id,
         "display_name": dataset_id,
-        "type": "csv",
+        "type": "none",
         "schema_prefix": "",
-        "duckdb_path": _DEFAULT_DUCKDB_PATH,
-        "csv_path": _DEFAULT_DATA_DIR,
+        "duckdb_path": None,
+        "csv_path": None,
         "connection": {},
     }
 
@@ -376,7 +397,14 @@ def check_connection(source_info=None):
             }
 
     # --- CSV fallback ---
-    csv_path = source_info.get("csv_path", _DEFAULT_DATA_DIR)
+    csv_path = source_info.get("csv_path")
+    if not csv_path:
+        return {
+            "ok": False,
+            "source": src_name,
+            "type": "csv",
+            "message": "No data directory configured. Use /connect-data to set up a dataset.",
+        }
     dir_path = Path(csv_path)
     if not dir_path.is_dir():
         return {
@@ -453,7 +481,7 @@ def get_connection_for_profiling(source_info=None):
                 pass  # Fall through to CSV
 
     # CSV fallback
-    csv_dir = source_info.get("csv_path", _DEFAULT_DATA_DIR)
+    csv_dir = source_info.get("csv_path")
     result["type"] = "csv"
     result["csv_dir"] = csv_dir
     result["tables"] = list_tables(csv_dir)
@@ -475,7 +503,7 @@ def schema_to_markdown(schema_dict):
         schema_dict: Dict with structure::
 
             {
-                "dataset": "novamart",
+                "dataset": "my_dataset",
                 "tables": [
                     {
                         "name": "orders",

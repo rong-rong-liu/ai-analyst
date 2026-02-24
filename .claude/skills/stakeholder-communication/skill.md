@@ -8,6 +8,13 @@ Apply this skill when producing a narrative (Storytelling agent), creating a dec
 
 ## Instructions
 
+### Pre-flight: Load Learnings
+Before executing, check `.knowledge/learnings/index.md` for relevant entries:
+- Read the file. If it doesn't exist or is empty, skip silently.
+- Scan for entries under **"Communication"** and **"General"** headings (or related categories like "Stakeholder Preferences").
+- If entries exist, incorporate them as constraints for this execution (e.g., audience-specific preferences, formatting conventions).
+- Never block execution if learnings are unavailable.
+
 ### The Stakeholder Matrix
 
 Different audiences care about different things. For the same finding, adapt:

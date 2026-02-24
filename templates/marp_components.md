@@ -406,7 +406,7 @@ Active stop: `<div class="timeline-stop active">` (amber dot with glow).
 ## Data Source Attribution
 
 ```html
-<div class="data-source">NovaMart analytics · Jan–Dec 2024 · n=2.4M sessions</div>
+<div class="data-source">{{DISPLAY_NAME}} analytics · {{DATE_RANGE}} · n=2.4M sessions</div>
 ```
 
 Placed at the bottom of data slides. Auto-aligns right with top border.

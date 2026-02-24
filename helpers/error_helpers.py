@@ -57,11 +57,11 @@ _SQL_HINTS = [
         "keywords": ["Table with name", "does not exist", "Catalog Error", "table not found"],
         "message": "The table name in your query was not found.",
         "suggestion": (
-            "Check the table name for typos. Common NovaMart tables:\n"
-            "  orders, users, products, events, sessions, order_items,\n"
-            "  promotions, experiments, experiment_assignments,\n"
-            "  memberships, support_tickets, nps_responses, calendar\n"
-            "If using MotherDuck: novamart.TABLE\n"
+            "Check the table name for typos. Check your active dataset schema\n"
+            "for available table names:\n"
+            "  Run /data to inspect the active schema, or\n"
+            "  conn.sql(\"SHOW TABLES\").df() to list tables.\n"
+            "If using MotherDuck: schema.TABLE\n"
             "If using local DuckDB: just TABLE (no schema prefix)"
         ),
     },
@@ -188,11 +188,11 @@ def friendly_error(exception, context=None):
             ),
             "suggestion": (
                 "Check the file path and name. Common data locations:\n"
-                "  - data/novamart/ — NovaMart CSV files\n"
                 "  - data/hero/ — Hero dataset\n"
                 "  - data/examples/ — Example datasets\n"
-                "Use: from helpers.data_helpers import list_tables\n"
-                "     print(list_tables())  # see available tables"
+                "Use /connect-data to add a new dataset, or:\n"
+                "  from helpers.data_helpers import list_tables\n"
+                "  print(list_tables())  # see available tables"
             ),
             "technical": technical,
         }
@@ -297,7 +297,7 @@ def friendly_error(exception, context=None):
             ),
             "suggestion": (
                 "Try these steps:\n"
-                "  1. Check that the .duckdb file exists in data/novamart/\n"
+                "  1. Check that the .duckdb file exists in your active dataset directory\n"
                 "  2. Close any other programs using the database\n"
                 "  3. Fall back to CSV: from helpers.data_helpers import read_table\n"
                 "     df = read_table('orders')\n"
@@ -360,7 +360,7 @@ def safe_query(conn, sql, fallback_csv=None):
         sql: SQL query string to execute.
         fallback_csv: Optional table name for CSV fallback (e.g., "orders").
             If the SQL query fails and this is provided, the function will
-            load the corresponding CSV from data/novamart/{table}.csv.
+            load the corresponding CSV from the active dataset's data directory.
 
     Returns:
         tuple of (DataFrame, source_info) where source_info is a dict with:
@@ -644,17 +644,50 @@ def _match_sql_hint(exc_msg):
     return None
 
 
-def _csv_fallback(table_name, error_info, data_dir="data/novamart/"):
+def _csv_fallback(table_name, error_info, data_dir=None):
     """Attempt to load data from CSV as a fallback.
 
     Args:
         table_name: Table name (e.g., "orders") — maps to {data_dir}/{table}.csv.
         error_info: The friendly_error dict from the original failure.
-        data_dir: Directory containing the CSV files.
+        data_dir: Directory containing the CSV files. If None, attempts to
+            resolve from the active dataset manifest.
 
     Returns:
         tuple of (DataFrame, source_info)
     """
+    if data_dir is None:
+        # Try to resolve from active dataset manifest
+        try:
+            from helpers.data_helpers import detect_active_source
+
+            source_info = detect_active_source()
+            data_dir = source_info.get("local_data", {}).get("path")
+        except Exception:
+            data_dir = None
+
+    if data_dir is None:
+        return (
+            pd.DataFrame(),
+            {
+                "source": "csv_fallback",
+                "query": table_name,
+                "status": "error",
+                "error": {
+                    "error_type": "fallback_failed",
+                    "message": (
+                        "SQL query failed and no CSV data directory is configured. "
+                        "Use /connect-data to set up a dataset."
+                    ),
+                    "suggestion": (
+                        "No active dataset data directory found.\n"
+                        "Run /connect-data to add a dataset, or pass data_dir explicitly."
+                    ),
+                    "technical": error_info.get("technical", ""),
+                },
+            },
+        )
+
     csv_path = Path(data_dir) / f"{table_name}.csv"
 
     if not csv_path.exists():

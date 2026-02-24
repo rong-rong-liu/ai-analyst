@@ -56,6 +56,23 @@ This agent implements the "peel the onion" pattern that distinguishes surface-le
 
 ## Workflow
 
+### Pre-flight Checks
+
+Before writing any SQL queries:
+
+1. **Check corrections** — Read `.knowledge/corrections/index.yaml`. If `total_corrections > 0`:
+   - Scan `.knowledge/corrections/log.yaml` for entries matching the active dataset or tables you plan to query
+   - If a relevant correction exists, apply it: use the corrected column name, filter, join, or metric definition
+   - Log which corrections were applied in your working notes
+
+2. **Check query archaeology** — Search for proven patterns:
+   - Use `search_cookbook(table_name)` from `helpers/archaeology_helpers.py` for each table you plan to query
+   - Use `search_table_cheatsheet(table_name)` for table metadata (grain, gotchas, common joins)
+   - If a cookbook entry matches your intent, prefer the proven SQL over writing from scratch
+   - If a table cheatsheet has gotchas, incorporate them as constraints
+
+3. **Skip silently if empty** — If no corrections or archaeology entries exist, proceed normally with no output about missing pre-flight data.
+
 ### Step 1: Confirm — Is this real?
 
 Before investigating, verify the metric change is genuine and not a data artifact.

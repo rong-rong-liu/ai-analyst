@@ -1,131 +1,118 @@
 # Skill: First-Run Welcome
 
 ## Purpose
-Provide an adaptive welcome experience for new users. Detects whether this
-is a first session (no `.knowledge/user/profile.md`) and tailors the
-onboarding flow based on what data is available.
+Provide an adaptive welcome experience based on setup state. Routes new users
+through `/setup` for guided onboarding. Welcomes returning users with context
+about their active dataset and quick actions.
 
 ## When to Use
-- Session start when no user profile exists at `.knowledge/user/profile.md`
-- After Knowledge Bootstrap detects a missing profile (Step 4)
+- Session start (triggered by Knowledge Bootstrap)
+- Before any analysis work begins
 
 ## Instructions
 
-### Step 1: Detect environment
+### Step 1: Detect setup state
 
-Check five things:
+Read `.knowledge/setup-state.yaml`. Classify into one of three states:
 
-1. **User profile exists?** → `.knowledge/user/profile.md`
-   - If YES: This is a returning user. Skip this skill entirely.
-   - If NO: Continue — this is a first run.
+1. **Cold start** — file does not exist OR `setup_complete: false` with no
+   `phases_completed` (empty or missing).
+2. **Partial setup** — file exists, `setup_complete: false`, and at least one
+   entry in `phases_completed`.
+3. **Warm start** — file exists and `setup_complete: true`.
 
-2. **NovaMart data present?** → Check `data/novamart/` for CSV files
-   - If YES: NovaMart seed dataset is available for guided experience.
-   - If NO: NovaMart was removed or never installed.
+### Step 2: Route based on state
 
-3. **Active dataset configured?** → `.knowledge/active.yaml`
-   - If YES and not "novamart": User has their own data connected.
-   - If NO: No dataset configured yet.
+---
 
-4. **MCP settings configured?** → `.claude/mcp.json`
-   - If MISSING: Show setup hint:
-     ```
-     MCP not configured yet. To connect to MotherDuck:
-       cp .claude/mcp.json.example .claude/mcp.json
-     Then edit .claude/mcp.json and add your MotherDuck token.
-     See setup/mcp-config.md for details.
-     ```
+#### Cold Start (no setup-state.yaml or setup_complete: false, no phases done)
 
-5. **Claude settings configured?** → `.claude/settings.local.json`
-   - If MISSING: Show setup hint:
-     ```
-     Tip: Copy the example settings to allow Marp slide rendering:
-       cp .claude/settings.local.json.example .claude/settings.local.json
-     ```
-
-### Step 2: Present welcome based on scenario
-
-#### Scenario A: NovaMart present, no user data
-_Most common for new users._
+Present this welcome and route to `/setup`:
 
 ```
-Welcome to the AI Analyst! I'm your analytical partner — I help you
-turn business questions into validated insights, charts, and presentations.
+Welcome to AI Analyst — your analytical partner for product teams.
 
-You have the NovaMart demo dataset loaded (~8M rows of e-commerce data).
-Here's how to get started:
+I help you turn business questions into validated insights, charts, and
+presentations. Think funnel analysis, segmentation, root cause investigation,
+trend detection — from question to slide deck.
 
-**Try one of these:**
-1. Ask a question: "What's our conversion rate by device?"
-2. Run a guided analysis: "Why did mobile revenue change in Q3?"
-3. Full pipeline: `/run-pipeline` for end-to-end analysis → deck
+Let's get you set up. I'll walk you through a quick interview to learn about
+your data, your role, and what you want to analyze.
 
-**Useful commands:**
-- `/data` — see what tables and columns are available
-- `/datasets` — list connected datasets
-- `/run-pipeline` — full analysis pipeline
-
-What would you like to explore?
+Starting setup now...
 ```
 
-#### Scenario B: NovaMart removed, no user data
-_Student removed demo data but hasn't connected their own yet._
+Then invoke `/setup` to begin the guided interview. Do NOT show dataset info,
+tutorial content, or example queries. The setup flow handles all onboarding.
+
+---
+
+#### Partial Setup (some phases complete, setup not finished)
+
+Read `phases_completed` and `phases_remaining` from `.knowledge/setup-state.yaml`.
 
 ```
-Welcome to the AI Analyst! I'm your analytical partner.
+Welcome back! Your setup is partially complete.
 
-It looks like you don't have a dataset connected yet. Let's fix that:
+Done: [list phases_completed]
+Remaining: [list phases_remaining]
 
-**Option 1: Connect your own data**
-Use `/connect-data` to set up a connection to your database
-(MotherDuck, Postgres, BigQuery, Snowflake, or local CSV files).
-
-**Option 2: Use a practice dataset**
-Check `data/examples/` for curated public datasets with README guides.
-Copy one to `data/` and I'll help you explore it.
-
-Which would you prefer?
+Want to pick up where you left off? Type `/setup` to resume, or ask me
+a question if you'd rather dive in.
 ```
 
-#### Scenario C: User's own data already connected
-_Student set up their data before their first session with the AI._
+---
+
+#### Warm Start (setup_complete: true)
+
+Read context from:
+- `.knowledge/active.yaml` → `active_dataset` name
+- `.knowledge/datasets/{active}/manifest.yaml` → table count
+- `.knowledge/analyses/index.yaml` → `last_updated` for last analysis date
 
 ```
-Welcome to the AI Analyst! I'm your analytical partner.
+Welcome back! Here's where things stand:
 
-I see you have [DATASET_NAME] connected with [N] tables.
-Let me get familiar with your data:
+Dataset: [DATASET_NAME] ([N] tables)
+Last analysis: [DATE or "none yet"]
 
-1. I'll run a quick quality check to understand the shape of your data
-2. Then you can ask me anything — from quick lookups to full analyses
+Quick actions:
+- Ask a question — "What's our conversion rate by channel?"
+- /explore — interactive data exploration
+- /run-pipeline — full analysis from question to deck
 
-Want me to start with a data quality overview, or do you have a
-specific question in mind?
+What would you like to work on?
 ```
 
-### Step 3: Create user profile
+If `active_dataset` is null (setup complete but no data connected), show:
 
-After presenting the welcome, create the user profile from the template
-in the Knowledge Bootstrap skill (Step 4). Set initial values based on
-any signals from the conversation:
+```
+Welcome back! Setup is complete but no dataset is active yet.
 
-- If the user mentions their role ("I'm a PM"), set Role
-- If they ask for technical details, set Technical level = intermediate+
-- Otherwise, leave fields as placeholders for future correction
+- /connect-data — add a dataset
+- /datasets — see available datasets
 
-### Step 4: Proceed to analysis
+What would you like to do?
+```
 
-After the welcome exchange, hand off to normal operation:
-- If the user asked a question → route through Question Router (UX-1.1)
-- If the user wants to explore → suggest `/data` or a sample question
-- If the user needs to connect data → guide through `/connect-data`
+### Step 3: Proceed
+
+After presenting the welcome:
+- **Cold start:** Hand off to `/setup`. Do not proceed with analysis.
+- **Partial setup:** If user types `/setup`, hand off. If user asks a question,
+  route through Question Router and note that setup can be finished later.
+- **Warm start:** If user asks a question, route through Question Router.
+  If user picks a quick action, invoke that skill/agent.
 
 ## Anti-Patterns
 
-1. **Never show the welcome to returning users.** If profile.md exists,
-   skip this skill entirely.
-2. **Never assume the user wants NovaMart.** Always present their options.
-3. **Never overwhelm with feature lists.** Keep the welcome to 3 actions
-   max. Details come through natural exploration.
-4. **Never block on welcome.** If the user already typed a question in
-   their first message, answer it — weave the welcome context in naturally.
+1. **Never show welcome to warm-start users who typed a question.** If their
+   first message is a question, answer it — weave a one-line "welcome back"
+   naturally.
+2. **Never show dataset details or tutorial content on cold start.** The
+   `/setup` flow handles all onboarding.
+3. **Never overwhelm with feature lists.** Keep each welcome variant concise.
+4. **Never reference NovaMart, bootcamp, or workshop content.** This is a
+   general-purpose tool, not a course.
+5. **Never block on welcome.** If the user already asked a question, serve
+   it — adapt the welcome around their intent.

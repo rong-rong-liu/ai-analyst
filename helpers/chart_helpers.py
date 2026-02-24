@@ -2,7 +2,7 @@
 Analytics Chart Helpers — Storytelling with Data utilities.
 
 Reusable functions for creating SWD-style charts in the
-AI Analytics for Builders course.
+AI Analyst project.
 
 Usage:
     from helpers.chart_helpers import (
@@ -23,6 +23,8 @@ Usage:
     action_title(ax, "iOS drives 60% of support tickets")
     save_chart(fig, "my_chart.png")
 """
+
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -55,14 +57,65 @@ COLORS = {
 }
 
 # ---------------------------------------------------------------------------
+# Theme integration
+# ---------------------------------------------------------------------------
+
+
+def load_theme_colors(theme_name: str | None = None) -> dict:
+    """Load colors from a theme and update the module-level COLORS dict.
+
+    Call this at the start of an analysis to switch to a brand theme.
+    If not called, the hardcoded defaults (matching the base analytics theme)
+    remain active.
+
+    Args:
+        theme_name: Theme to load.  ``None`` or ``"analytics"`` loads the
+            base theme.  Any other string loads the corresponding brand
+            theme from ``themes/brands/{theme_name}/theme.yaml``.
+
+    Returns:
+        dict: The full theme dict for further use (e.g. pass to
+        ``swd_style(theme=...)`` or ``highlight_bar(theme=...)``).
+    """
+    from helpers.theme_loader import load_theme
+    from helpers.chart_palette import apply_theme_colors
+
+    theme = load_theme(theme_name)
+    colors = theme["colors"]
+
+    # Update the module-level COLORS dict
+    COLORS.update({
+        "primary": colors["primary"],
+        "positive": colors.get("secondary", colors["primary"]),
+        "negative": colors["accent"],
+        "muted": colors["neutral"],
+        "bg": colors["background"],
+        "text": colors["text"],
+        "gray200": colors.get("text_light", "#CCCCCC"),
+    })
+
+    # Apply theme to matplotlib rcParams
+    apply_theme_colors(theme)
+
+    return theme
+
+
+# ---------------------------------------------------------------------------
 # Style loader
 # ---------------------------------------------------------------------------
 
 _STYLE_FILE = Path(__file__).with_name("analytics_chart_style.mplstyle")
 
 
-def swd_style():
+def swd_style(theme: dict | None = None):
     """Apply the Analytics SWD matplotlib style and return the color palette.
+
+    Args:
+        theme: Optional theme dict (as returned by :func:`load_theme` or
+            :func:`load_theme_colors`).  When provided, overrides background
+            and text colors from the theme after loading the mplstyle file.
+            When ``None`` (the default), behavior is unchanged — fully
+            backward compatible.
 
     Returns:
         dict: Color palette mapping (e.g. colors["action"] -> "#D97706").
@@ -84,6 +137,17 @@ def swd_style():
             "axes.titlesize": 14,
             "axes.titleweight": "bold",
         })
+
+    # Override with theme colors when a theme is provided
+    if theme is not None:
+        colors = theme.get("colors", {})
+        bg = colors.get("background", "#F7F6F2")
+        text = colors.get("text", "#333333")
+        plt.rcParams["figure.facecolor"] = bg
+        plt.rcParams["axes.facecolor"] = bg
+        plt.rcParams["text.color"] = text
+        plt.rcParams["axes.labelcolor"] = text
+
     return dict(COLORS)
 
 
@@ -93,7 +157,7 @@ def swd_style():
 
 def highlight_bar(ax, categories, values, highlight=None, highlight_color=None,
                   base_color=None, horizontal=True, sort=True, fmt=None,
-                  label_offset=0.02):
+                  label_offset=0.02, theme=None):
     """Bar chart with one bar highlighted, the rest gray.
 
     Args:
@@ -102,12 +166,23 @@ def highlight_bar(ax, categories, values, highlight=None, highlight_color=None,
         values: Sequence of numeric values (same length as categories).
         highlight: Category label to highlight (or list of labels).
         highlight_color: Hex color for highlighted bar(s). Default: Action Amber (`#D97706`).
+            When *theme* is provided and this is ``None``, uses the theme's
+            ``highlight.focus`` color instead.
         base_color: Hex color for non-highlighted bars. Default: GRAY_200.
+            When *theme* is provided and this is ``None``, uses the theme's
+            ``highlight.comparison`` color instead.
         horizontal: If True (default), draw horizontal bars (barh).
         sort: If True (default), sort bars by value.
         fmt: Format string for value labels (e.g. "{:,.0f}" or "{:.1%}").
         label_offset: Fraction of max value used to offset labels from bars.
+        theme: Optional theme dict.  When provided, default highlight and
+            base colors are drawn from the theme's highlight palette rather
+            than the hardcoded COLORS dict.
     """
+    if theme is not None and highlight_color is None:
+        highlight_color = theme["colors"]["highlight"]["focus"]
+    if theme is not None and base_color is None:
+        base_color = theme["colors"]["highlight"]["comparison"]
     highlight_color = highlight_color or COLORS["action"]
     base_color = base_color or COLORS["gray200"]
 
@@ -157,7 +232,7 @@ def highlight_bar(ax, categories, values, highlight=None, highlight_color=None,
 
 def highlight_line(ax, x, y_dict, highlight=None, highlight_color=None,
                    base_color=None, linewidth_highlight=2.5, linewidth_base=1.2,
-                   label_pad=0.3):
+                   label_pad=0.3, theme=None):
     """Line chart with one line colored, the rest gray.
 
     Args:
@@ -166,11 +241,22 @@ def highlight_line(ax, x, y_dict, highlight=None, highlight_color=None,
         y_dict: Dict mapping series_name -> y-values.
         highlight: Series name to highlight (or list of names).
         highlight_color: Hex color for highlighted line(s). Default: Action Amber (`#D97706`).
+            When *theme* is provided and this is ``None``, uses the theme's
+            ``highlight.focus`` color instead.
         base_color: Hex color for non-highlighted lines. Default: GRAY_200.
+            When *theme* is provided and this is ``None``, uses the theme's
+            ``highlight.comparison`` color instead.
         linewidth_highlight: Line width for highlighted series.
         linewidth_base: Line width for background series.
         label_pad: Horizontal padding for end-of-line labels.
+        theme: Optional theme dict.  When provided, default highlight and
+            base colors are drawn from the theme's highlight palette rather
+            than the hardcoded COLORS dict.
     """
+    if theme is not None and highlight_color is None:
+        highlight_color = theme["colors"]["highlight"]["focus"]
+    if theme is not None and base_color is None:
+        base_color = theme["colors"]["highlight"]["comparison"]
     highlight_color = highlight_color or COLORS["action"]
     base_color = base_color or COLORS["gray200"]
 
@@ -205,7 +291,7 @@ def action_title(ax, title, subtitle=None):
     Args:
         ax: Matplotlib Axes.
         title: The takeaway statement (e.g. "iOS drove the June spike").
-        subtitle: Context line (e.g. "NovaMart Support Tickets, 2024").
+        subtitle: Context line (e.g. "Support Tickets, 2024").
     """
     if subtitle:
         ax.text(0, 1.12, title, transform=ax.transAxes,

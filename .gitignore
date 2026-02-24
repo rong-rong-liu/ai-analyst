@@ -78,15 +78,6 @@ data/**/*.duckdb
 data/**/*.parquet
 *.xlsx
 
-# Tier 1 allowlist: small synthetic CSVs that ship in git (~4MB total)
-!data/novamart/calendar.csv
-!data/novamart/experiments.csv
-!data/novamart/promotions.csv
-!data/novamart/products.csv
-!data/novamart/memberships.csv
-!data/novamart/nps_responses.csv
-!data/novamart/experiment_assignments.csv
-!data/novamart/order_items.csv
 
 # Zillow (should never exist, belt-and-suspenders)
 data/zillow/
@@ -103,8 +94,10 @@ yarn-debug.log*
 yarn-error.log*
 
 # Knowledge system -- user-specific files
+.knowledge/active.yaml
+.knowledge/setup-state.yaml
 .knowledge/user/
-.knowledge/datasets/*/last_profile.md
+.knowledge/datasets/*/
 
 # Analyses archive (user-generated content ignored, seed files kept)
 .knowledge/analyses/*

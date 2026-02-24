@@ -15,14 +15,14 @@ Invoke with: `/run-pipeline`, "run the full pipeline", "analyze end-to-end", or 
 | `context` | No | `"stakeholder readout"` | Presentation context: "stakeholder readout", "workshop", "talk", "team standup" |
 | `theme` | No | `analytics` (light) | Theme override: "analytics" (light) or "analytics-dark" (dark) |
 | `audience` | No | `"senior stakeholders"` | Who will see the deck — controls content density |
-| `dataset_name` | No | Derived from data_path | Short name for file naming (e.g., "hawaii", "novamart") |
+| `dataset_name` | No | Derived from data_path | Short name for file naming (e.g., "hawaii", "my_dataset") |
 | `plan` | No | `full_presentation` | Execution plan: `full_presentation`, `deep_dive`, `quick_chart`, `refresh_deck`, `validate_only`, or inline agent list |
 | `dry-run` | No | `false` | If `true`, print execution plan without running agents |
 | `agents` | No | — | Inline agent allow-list (e.g., `agents=question-framing,hypothesis,data-explorer`) |
 
 Arguments can be passed inline or prompted interactively:
 ```
-/run-pipeline data_path=data/novamart/ question="What's driving the decline in tourism revenue?" plan=deep_dive
+/run-pipeline data_path=data/your_dataset/ question="What's driving the decline in revenue?" plan=deep_dive
 /run-pipeline dry-run=true
 /run-pipeline plan=refresh_deck
 ```
@@ -79,15 +79,39 @@ After deck creation and Checkpoint 4, the pipeline must export the deck to both 
 
 The pipeline runs on a DAG (directed acyclic graph) derived from `agents/registry.yaml`. Instead of hardcoded steps, the engine resolves execution order from agent dependencies.
 
+### Step 0: Pre-execution Cleanup (Crash Recovery)
+
+Before validation, detect and clean up artifacts from a previous crashed run.
+
+1. **Detect stale runs:** Check if `working/pipeline_state.json` (or `working/latest/pipeline_state.json`) exists with `status: running`.
+   - Parse `updated_at` and compute elapsed time. If > 30 minutes ago, treat as stale.
+   - Print: `"Found stale pipeline state from {updated_at}. Previous run may have crashed."`
+   - Ask: `"Archive stale state and start fresh? (Y/n)"`
+   - **If yes:** Rename `working/pipeline_state.json` to `working/crashed_{run_id}_state.json`. Continue to Phase 0.
+   - **If no:** Redirect to `/resume-pipeline` to attempt resuming the previous run. Stop here.
+   - If `updated_at` is within 30 minutes, assume another run is active. HALT with: `"Pipeline state shows an active run from {updated_at}. Use /resume-pipeline or wait for it to finish."`
+
+2. **Clean temp files:** Delete any `working/*.tmp.json` files (partial atomic writes from a crashed run).
+
+3. **Validate per-run directory:** If prior run left an orphaned `working/latest` symlink:
+   - Remove the stale symlink (the new run will create its own in Phase 1).
+   - Create `working/runs/{run_id}/` directory structure with `working/`, `outputs/` subdirectories.
+
+4. **Initialize fresh state:** The actual `pipeline_state.json` creation happens in Phase 1 with `schema_version: 2` and all agents set to `pending`. Step 0 only ensures the workspace is clean.
+
+After cleanup completes (or is skipped if no stale state found), proceed to Phase 0.
+
+---
+
 ### Phase 0: Pre-flight Validation
 
 Before any execution, validate the registry:
 
-1. **Read registry:** Parse `agents/registry.yaml`. Extract each agent's `name`, `file`, `pipeline_step`, `depends_on`, `inputs`, `outputs`, `knowledge_context`.
+1. **Read registry:** Parse `agents/registry.yaml`. Extract each agent's `name`, `file`, `pipeline_step`, `depends_on`, `depends_on_any`, `critical`, `inputs`, `outputs`, `knowledge_context`.
 
 2. **File existence check:** For each agent, verify the file at `agent.file` exists on disk. If any file is missing, HALT with: `"Agent file not found: {path}"`
 
-3. **Dependency resolution:** For each agent's `depends_on` list, verify every referenced agent name exists in the registry. If any reference is dangling, HALT with: `"Unknown dependency: {agent} depends on {missing}"`
+3. **Dependency resolution:** For each agent's `depends_on` and `depends_on_any` lists, verify every referenced agent name exists in the registry. If any reference is dangling, HALT with: `"Unknown dependency: {agent} depends on {missing}"`
 
 4. **Cycle detection:** Perform a topological sort on the dependency graph. If a cycle is detected, HALT with: `"Cycle detected: {cycle_path}"`
    - Algorithm: Kahn's algorithm — iteratively remove nodes with in-degree 0. If nodes remain after no more can be removed, those nodes form a cycle.
@@ -102,19 +126,44 @@ Before any execution, validate the registry:
 
 6. **Apply execution plan:** Load the plan from `plans.md` (or use the default `full_presentation`). Filter the DAG to include only agents in the plan's allow-list. Agents not in the plan are marked `skipped`. If a plan agent depends on a skipped agent, warn: `"Agent {name} depends on skipped agent {dep}. Ensure required context exists."`
 
-### Phase 1: Initialize Pipeline State
+### Phase 1: Initialize Run Directory & Pipeline State
 
-Create `working/pipeline_state.json` per the schema in `agents/pipeline_state_schema.md`:
+**Per-run directory setup:** Every pipeline run gets an isolated directory under `working/runs/`.
+
+1. **Create run directory:**
+   ```
+   RUN_DIR = working/runs/{YYYY-MM-DD}_{DATASET_NAME}_{SHORT_TITLE}/
+   ```
+   Where `SHORT_TITLE` is derived from the business question -- lowercase, hyphens, max 40 chars
+   (e.g., `2026-02-23_acme-analytics_why-revenue-dropped-q3`).
+
+2. **Create subdirectories:**
+   ```
+   {RUN_DIR}/working/       -- intermediate files (tie-outs, storyboards, reviews)
+   {RUN_DIR}/outputs/       -- final deliverables (decks, charts, narratives)
+   {RUN_DIR}/pipeline_state.json  -- run state (authoritative)
+   {RUN_DIR}/pipeline_metrics.json -- execution timing
+   ```
+
+3. **Create symlink:** `working/latest` -> `{RUN_DIR}` (remove existing symlink first if present).
+
+4. **Backward-compatible aliases:** Also create/maintain the legacy `working/` and `outputs/` paths.
+   All agents continue writing to `working/` and `outputs/` as before. At pipeline end,
+   copy final artifacts into `{RUN_DIR}/working/` and `{RUN_DIR}/outputs/` so the run
+   directory is self-contained.
+
+**Initialize pipeline_state.json** in `{RUN_DIR}/` per the schema in `agents/pipeline_state_schema.md`:
 - Set `pipeline_id` to current ISO timestamp
+- Set `run_dir` to the full run directory path
 - Set `dataset` from active dataset
 - Set `question` from user input
 - Initialize all included agents as `pending`, skipped agents as `skipped`
 - Set pipeline `status: running`
 
 If **resuming** (pipeline_state.json already exists with `status: paused` or `status: failed`):
-- Read existing state
-- Identify agents with `status: completed` — leave them
-- Identify agents with `status: failed` — reset to `pending` for retry
+- Read existing state (check `working/latest/pipeline_state.json` first, then fall back to `working/pipeline_state.json`)
+- Identify agents with `status: completed` -- leave them
+- Identify agents with `status: failed` -- reset to `pending` for retry
 - Compute the READY set (pending agents whose dependencies are all completed)
 - Report: `"Resuming from {N} completed agents. Next: {READY agent names}"`
 - Skip to Phase 2
@@ -125,7 +174,9 @@ Execute agents tier by tier:
 
 ```
 FOR each tier in execution_tiers:
-  1. READY_SET = agents in this tier whose depends_on are all completed
+  1. READY_SET = agents in this tier that satisfy BOTH:
+     - ALL `depends_on` agents have completed (AND-gate)
+     - At least ONE `depends_on_any` agent has completed, if specified (OR-gate)
      (after plan filtering and skipping)
 
   2. If READY_SET is empty AND pending agents remain → deadlock → HALT
@@ -146,9 +197,16 @@ FOR each tier in execution_tiers:
   6. FOR each completed agent:
      a. Record completed_at, output_files in pipeline_state.json
      b. Record timing in pipeline_metrics
-     c. If FAILED: increment failure counter for this tier
+     c. If FAILED and agent.critical is true (default): increment failure counter
+     d. If FAILED and agent.critical is false (warn_on_failure):
+        - Log warning: "⚠ Non-critical agent {name} failed: {error}. Continuing."
+        - Write stub output to agent's first output path:
+          `# {name} — SKIPPED (failure)\nReason: {error}\nTimestamp: {iso_now}`
+        - Mark status as `degraded` in pipeline_state.json
+        - Queue warning for display at next checkpoint
+        - Do NOT increment tier failure counter
 
-  7. CIRCUIT BREAKER: If 3+ agents failed in this tier → HALT pipeline
+  7. CIRCUIT BREAKER: If 3+ critical agents failed in this tier → HALT pipeline
      Report: "Circuit breaker tripped: {N} failures in tier {T}. Failed: {names}"
 
   8. CHECKPOINT: If a checkpoint fires after this tier, run it (see Checkpoints)
@@ -302,13 +360,15 @@ Lint warnings that are reported but do NOT fail the checkpoint:
 
 When chart-maker becomes READY (after narrative-coherence-reviewer):
 
-1. **Parse storyboard:** Read `working/storyboard_{{DATASET}}.md`. For each beat, traverse the `slides` array and collect slides with `type: chart-full` (or `chart-left`/`chart-right`). Each chart-type slide references its parent beat's chart spec.
-2. **Build chart_beats list:** `[{beat_number, headline, chart_spec}, ...]`
-3. **Fan-out:** Prepare Chart Maker invocations per beat. Charts are generated at standard (10, 6) figsize (R7).
-4. **Parallel execution:** Launch up to 3 Chart Maker Tasks in parallel. Track: `chart_results[beat] = {status, files, error}`
-5. **Sequential fallback:** If Task tool unavailable, run one at a time
-6. **Error handling:** Log failed charts, continue pipeline. Report at Checkpoint 3 for retry
-7. **Verify:** Check all output files exist (base PNG + SVG per chart)
+1. **Parse storyboard:** Read `working/storyboard_{{DATASET}}.md`. For each beat, traverse the `slides` array and collect slides with `type: chart-full`, `chart-left`, or `chart-right`. Each chart-type slide references its parent beat's chart spec.
+2. **Build chart_specs list:** `[{beat_number, slide_index, headline, chart_spec, output_name}, ...]`
+3. **Sequential execution:** Invoke Chart Maker once per chart spec, one at a time (no parallelism). For each invocation:
+   - Pass the specific `chart_spec`, `output_name`, and shared pipeline context
+   - Charts are generated at standard (10, 6) figsize (R7)
+   - Track: `chart_results[beat] = {status, files, error}`
+   - On failure: log error, mark chart as `failed`, continue to next chart
+4. **Batch review:** After ALL charts are generated, invoke Visual Design Critic once with the full set of chart files for batch review. Pass all `chart_results` output paths.
+5. **Verify:** Check all output files exist (base PNG + SVG per chart). Report missing/failed charts at Checkpoint 3 for retry.
 
 ---
 
@@ -432,6 +492,7 @@ At the start and end of each tier (mapped to phases), emit progress:
 | Missing html:true | Components render as raw HTML text | R10 | Checkpoint 4 (lint) |
 | Missing size:16:9 | Slides render at 4:3 with broken layouts | R10 | Checkpoint 4 (lint) |
 | Export fails | Marp CLI not installed or crashes | R11 | Post-Checkpoint 4 |
+| Stale pipeline state | Previous run crashed mid-execution | Step 0 cleanup | Pre-flight |
 | Chart text overlap | Labels collide at rendered size | R7 | Checkpoint 3 + chart-maker HALT |
 | Chart overflows slide | Bare `![](...)` image not in `.chart-container` | R10 | Checkpoint 4 (lint: IMG-BARE-MD) |
 
@@ -472,6 +533,18 @@ else:
 
 Export is non-blocking — failures are logged as warnings, not pipeline halts. The Marp
 markdown deck is always the primary deliverable; PDF/HTML are convenience outputs.
+
+---
+
+## Post-Pipeline: Finalize Run Directory
+
+After export and before metric capture, consolidate the run directory:
+
+1. **Copy artifacts** from `working/` and `outputs/` into `{RUN_DIR}/working/` and `{RUN_DIR}/outputs/`
+2. **Update pipeline_state.json** in `{RUN_DIR}/`: set `status: completed`, record `completed_at`
+3. **Verify symlink:** Confirm `working/latest` points to this run directory
+
+The run directory is now a self-contained snapshot of the entire analysis.
 
 ---
 

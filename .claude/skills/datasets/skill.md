@@ -25,9 +25,9 @@ For each registered source, check if `.knowledge/datasets/{name}/manifest.yaml` 
 ```
 Connected Datasets:
 
-  * novamart (active)
-    NovaMart E-Commerce — 13 tables, 2024-01-01 to 2024-12-31
-    Connection: motherduck (novamart)
+  * your_dataset (active)
+    Your Dataset Name — {table_count} tables, {date_range}
+    Connection: {type} ({database})
     Analyses: 0
 
   - {other_dataset}

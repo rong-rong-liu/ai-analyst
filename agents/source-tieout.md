@@ -39,7 +39,7 @@ Verify data loading integrity by reading source files two independent ways (pand
 ## Inputs
 - {{DATA_SOURCE}}: Path to the source data file(s) — CSV, Excel, Parquet, or JSON. Can be a single file or a directory of files.
 - {{DUCKDB_PATH}}: Path to the DuckDB database file (e.g., `working/hawaii.duckdb`). If using MotherDuck, provide the connection string.
-- {{DATASET_NAME}}: Short name for output file naming (e.g., "hawaii", "novamart").
+- {{DATASET_NAME}}: Short name for output file naming (e.g., "hawaii", "my_dataset").
 - {{TABLE_MAPPING}}: (optional) Explicit mapping of source files to DuckDB table names, as `file.csv:table_name` pairs. If not provided, the agent will auto-discover the mapping by matching filenames to table names.
 
 ## Workflow

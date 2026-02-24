@@ -264,7 +264,7 @@ After writing a metric spec, automatically register it in the metric dictionary:
 
 ## Reference Queries for Common Metrics
 
-Use these canonical SQL patterns when computing standard metrics. Replace `{schema}` with the active dataset schema (e.g., `novamart`).
+Use these canonical SQL patterns when computing standard metrics. Replace `{schema}` with the active dataset schema (e.g., `your_dataset`).
 
 ### Conversion Rate (Event-Based)
 

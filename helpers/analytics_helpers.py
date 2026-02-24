@@ -40,7 +40,7 @@ Usage:
     print(result["violations"])
 
     # Synthesize findings into a narrative-ready structure
-    result = synthesize_insights(scored_findings, metadata={"dataset_name": "NovaMart"})
+    result = synthesize_insights(scored_findings, metadata={"dataset_name": "my_dataset"})
     print(result["headline"])
     print(result["narrative_flow"])
 """

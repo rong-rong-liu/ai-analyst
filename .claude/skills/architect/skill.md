@@ -41,7 +41,7 @@ If the brief is too vague (under 20 words, no clear deliverable), ask one clarif
 ### 2. Determine output directory
 
 Look for context clues:
-- If the brief mentions a specific project (podcast, bootcamp, evals, etc.), use that project's directory
+- If the brief mentions a specific project (podcast, analytics, evals, etc.), use that project's directory
 - If a `working/plans/` directory already exists nearby, use it
 - Otherwise, create `working/plans/` in the most relevant project directory
 - If truly ambiguous, ask the user
