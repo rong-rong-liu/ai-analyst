@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-02-23
+
+### Added
+- Interactive onboarding: `/setup` interview learns role, data sources, business context
+- Knowledge infrastructure: corrections, learnings, query archaeology, organization knowledge
+- Self-learning loop: feedback capture, correction logging, proven SQL pattern retrieval
+- YAML-based brand theming with WCAG-compliant palettes (`themes/brands/`)
+- Pipeline run tracking: `/runs` to list, inspect, compare, and clean up runs
+- Comms drafter agent for Slack/email/exec summary output
+- Business context system: glossary, metrics, products, teams per organization
+- Notion ingest skill for importing business context from Notion workspaces
+- Entity resolver for cross-dataset disambiguation
+- 8 new slash commands: `/setup`, `/runs`, `/business`, `/log-correction`, `/architect`, `/notion-ingest`, `/setup-dev-context`, `/compare-datasets`
+- 9 new skills: archaeology, feedback-capture, log-correction, setup, setup-dev-context, runs, business, notion-ingest, architect
+- 606 tests with synthetic fixtures (no external data dependencies)
+- Health check system for data connectivity diagnostics
+- Schema migration helpers for knowledge file versioning
+
+### Changed
+- Fully dataset-agnostic: agents resolve tables/columns from active manifest, not hardcoded names
+- Removed bundled NovaMart dataset — bring your own data with `/connect-data`
+- Removed legacy setup scripts (`download-data.sh`, `build-duckdb.sh`) and setup docs
+- Updated CLAUDE.md with V2 workflow, agent index, and skill table
+- Python requirement bumped to 3.10+
+
+### Fixed
+- Pipeline resume reliability improved with persistent state management
+- Chart palette now validates WCAG contrast ratios
+
 ## [1.0.0] - 2026-02-19
 
 ### Added
