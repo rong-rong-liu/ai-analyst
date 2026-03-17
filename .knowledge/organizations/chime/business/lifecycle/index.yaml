@@ -1,0 +1,101 @@
+
+# Chime Member Lifecycle
+
+# Member journey from enrollment to primary account status
+stages:
+
+  - stage: "Enrollment"
+    description: "Member signs up via the app."
+    acquisition_channels:
+      - "Paid marketing"
+      - "Organic"
+      - "Referral"
+      - "Pay Anyone (non-member receives money from Chime member)"
+      - "PLM (Product-Led Marketing)"
+    key_metric: "enrollment_count"
+    channel_analysis_grouping:
+      description: >
+        When analyzing enrollment by channel, always regroup raw channels into
+        these 5 standard groups (do not change this grouping):
+      groups:
+        - name: "Referral"
+          includes: ["Referral"]
+          notes: "Unchanged from raw channel."
+        - name: "Paid"
+          includes: ["Paid Credit", "Paid Debit"]
+          notes: "Combines Paid Credit and Paid Debit into a single Paid group."
+        - name: "Organic"
+          includes: ["Organic"]
+          notes: "Unchanged from raw channel."
+        - name: "Pay Anyone"
+          includes: ["Pay Anyone"]
+          notes: "Unchanged from raw channel."
+        - name: "Others"
+          includes: ["all remaining channels not listed above"]
+          notes: "Catch-all for any channel not mapped to Referral, Paid, Organic, or Pay Anyone."
+
+  - stage: "First Fund"
+    description: "Member makes their first deposit into the account."
+    key_metric: "first_fund_rate"
+
+  - stage: "First Activity"
+    description: "Member makes their first transaction (purchase, ATM withdrawal, etc.)."
+    key_metric: "activation_rate"
+
+  - stage: "Conversion"
+    description: "Member sets up a qualifying direct deposit ($200+) and becomes a Current DDer."
+    threshold: "$200+ direct deposit"
+    key_metric: "dd_conversion_rate_d30"
+
+  - stage: "Primary Account"
+    description: "Member uses Chime as their primary bank based on deposit volume or transaction frequency."
+    key_metric: "primary_account_rate"
+
+# Lifecycle state values used in base tables
+lifecycle_states:
+  - value: "New"
+    definition: "First period in this status"
+  - value: "Retained"
+    definition: "In this status last period AND still in this status"
+  - value: "Churned"
+    definition: "In this status last period but NOT now"
+  - value: "Winback"
+    definition: "NOT in this status last period but IS now"
+
+# Time-based metric clarifications — critical for correct analysis
+time_metric_guide:
+  m_series:
+    description: "Calendar-month based. Length varies (1-31 days) based on enrollment date."
+    column: "months_since_enrollment"
+    use_for: "Monthly reporting, calendar-aligned forecasts"
+    values: ["M0 (enrollment month)", "M1 (next calendar month)", "M2+ (2+ months after)"]
+    example: "User enrolls Jan 15 → M0=January, M1=February, M2=March"
+    warning: "A user who enrolls Jan 31 has only 1 day in M0. Do not use M0 to compare conversion across cohorts."
+
+  d_series:
+    description: "Day-based. Always exactly N days from enrollment. Spans calendar months."
+    use_for: "Cross-cohort conversion comparisons (fair, consistent window)"
+    values: ["D30 (30 days)", "D90 (90 days)", "D180 (180 days)"]
+    example: "User enrolls Jan 15 → D30 = Jan 15 through Feb 14"
+    columns:
+      - "d30_cvr — D30 DD conversion rate"
+      - "m0_dd_cvr — M0 DD conversion rate"
+      - "m1_dd_cvr — M1 DD conversion rate"
+      - "d30_active_rate — D30 activation rate"
+      - "m0_activation_rate — M0 activation rate"
+
+# Why direct deposit matters
+direct_deposit_importance:
+  summary: >
+    Direct deposit is the most critical engagement metric at Chime.
+    Setting up DD signals the member trusts Chime as their primary financial institution.
+  reasons:
+    - "Higher engagement: DD members transact more frequently, generating more interchange revenue"
+    - "Better retention: DD members have significantly lower churn rates"
+    - "Product eligibility: SpotMe, higher limits, and other features require qualifying DDs"
+    - "Unit economics: DD members have substantially higher LTV and contribution margin"
+
+# Seasonality notes
+seasonality:
+  - period: "Q1 (January-March)"
+    effect: "Tax season drives higher enrollment and direct deposit activity"

@@ -301,6 +301,8 @@ These are non-negotiable. They protect analytical quality.
 
 15. **Check corrections before writing SQL.** Before generating SQL for any analysis, check `.knowledge/corrections/index.yaml` for logged corrections matching the current dataset and table. Apply known fixes proactively — never repeat the same SQL mistake twice.
 
+16. **Never use `python3 -c "..."` for code that contains SQL or string literals.** Inline Python with embedded SQL triggers a shell injection warning (consecutive quote characters). Instead, always write the Python code to a script file in `working/` (e.g. `working/query.py`) and execute it with `python3 working/query.py`. This keeps SQL out of the bash command string entirely.
+
 ---
 
 ## When Things Go Wrong
