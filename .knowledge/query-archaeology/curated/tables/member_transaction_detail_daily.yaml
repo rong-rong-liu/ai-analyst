@@ -1,0 +1,7 @@
+table_name: "MEMBER_TRANSACTION_DETAIL_DAILY"
+dataset: "snowflake-data"
+full_path: "EDW_DB.MEMBER.MEMBER_TRANSACTION_DETAIL_DAILY"
+grain: "One row per DATE_KEY + USER_ID"
+description: "Daily transaction volumes/counts, DD behavior by day, funding breakdown by type, product-level daily activity, ATM usage, first/last transaction analysis."
+primary_key: ["DATE_KEY", "USER_ID"]
+updated_at: "2026-03-17"

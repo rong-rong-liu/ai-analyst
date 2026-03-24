@@ -1,0 +1,13 @@
+table_name: "DIM_ACCOUNT_DAILY_BALANCE"
+dataset: "snowflake-data"
+full_path: "EDW_DB.CORE.DIM_ACCOUNT_DAILY_BALANCE"
+grain: "One row per BALANCE_ON_DATE + ACCOUNT_KEY"
+description: >
+  Despite the 'DIM' prefix, this is a periodic snapshot FACT table with TRUE HISTORICAL ROWS.
+  Use for: balance trending, average balance calculations, negative balance analysis, overdraft tracking.
+primary_key: ["BALANCE_ON_DATE", "ACCOUNT_KEY"]
+gotchas:
+  - "CRITICAL — INCONSISTENT COLUMN VALUES in ACCOUNT_TYPE: mixes codes ('6','8','20') with strings ('checking','secured_credit'). Filter or normalize carefully."
+  - "CRITICAL — INCONSISTENT COLUMN VALUES in STATUS: mixes codes ('N','C','Z') with strings ('active','cancelled'). Filter or normalize carefully."
+  - "Despite 'DIM' prefix this is a fact table with historical rows — unlike DIM_ACCOUNT which is latest-only"
+updated_at: "2026-03-17"

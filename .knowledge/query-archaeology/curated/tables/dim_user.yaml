@@ -1,0 +1,12 @@
+table_name: "DIM_USER"
+dataset: "snowflake-data"
+full_path: "EDW_DB.CORE.DIM_USER"
+grain: "One row per USER_ID (not snapshotted daily)"
+description: "All users including non-enrolled prospects. Use for pre-enrollment data and referral relationships."
+primary_key: ["USER_ID"]
+gotchas:
+  - "Includes non-enrolled prospects — not just enrolled members. Use DIM_MEMBER for enrolled members only."
+  - "NOT snapshotted daily — no historical rows"
+related_tables:
+  - "DIM_MEMBER — subset, enrolled members with checking accounts only"
+updated_at: "2026-03-17"

@@ -265,9 +265,12 @@ def detect_active_source():
     }
 
     # --- Determine best available connection type ---
-    # Priority: motherduck > local duckdb > csv
+    # Priority: motherduck > external warehouse (snowflake/postgres/bigquery) > local duckdb > csv
     if conn.get("type") == "motherduck":
         source_info["type"] = "motherduck"
+    elif conn.get("type") in ("snowflake", "postgres", "bigquery"):
+        # External warehouse — keep the declared type; ConnectionManager handles auth.
+        source_info["type"] = conn["type"]
     elif source_info["duckdb_path"] and Path(source_info["duckdb_path"]).exists():
         source_info["type"] = "duckdb"
     elif source_info["csv_path"] and Path(source_info["csv_path"]).is_dir():

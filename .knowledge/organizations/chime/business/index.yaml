@@ -1,0 +1,8 @@
+organization: "Chime"
+sections:
+  glossary: glossary/terms.yaml
+  products: products/index.yaml
+  metrics: metrics/index.yaml
+  lifecycle: lifecycle/index.yaml
+  banking_partners: banking_partners.yaml
+  teams: teams/index.yaml

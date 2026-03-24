@@ -1,0 +1,10 @@
+table_name: "DIM_DATE"
+dataset: "snowflake-data"
+full_path: "EDW_DB.CORE.DIM_DATE"
+grain: "One row per DATE_KEY"
+description: "Calendar/date dimension. Use for joining to date_key columns, calendar-based aggregations, fiscal reporting."
+primary_key: ["DATE_KEY"]
+common_filters: []
+gotchas:
+  - "Join on DATE_KEY (not a date string) — verify format matches fact table date columns"
+updated_at: "2026-03-17"

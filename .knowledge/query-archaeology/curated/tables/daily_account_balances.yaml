@@ -1,0 +1,9 @@
+table_name: "DAILY_ACCOUNT_BALANCES"
+dataset: "snowflake-data"
+full_path: "CHIME.FINANCE.DAILY_ACCOUNT_BALANCES"
+grain: "One row per MEMBER_ID + BALANCE_UPDATED"
+description: "Daily balance analysis — checking and savings. Balance tier distributions, average/median balance calculations."
+primary_key: ["MEMBER_ID", "BALANCE_UPDATED"]
+related_tables:
+  - "EDW_DB.CORE.DIM_ACCOUNT_DAILY_BALANCE — alternative balance table (has inconsistent ACCOUNT_TYPE and STATUS column values)"
+updated_at: "2026-03-17"

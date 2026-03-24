@@ -1,0 +1,34 @@
+table_name: "MONTHLY_ACTIVE_MEMBERS"
+dataset: "snowflake-data"
+full_path: "EDW_DB.GROWTH.MONTHLY_ACTIVE_MEMBERS"
+grain: "One row per USER_ID + MONTH"
+description: "Monthly member-level status (TA, DDer, PA, product usage), cohort tracking, product adoption analysis, growth accounting components at member level, PA analysis."
+primary_key: ["USER_ID", "MONTH"]
+updated_at: "2026-03-19"
+
+key_columns:
+  - name: "MONTH"
+    type: "DATE"
+    description: "Calendar month of the record (first of month)."
+  - name: "USER_ID"
+    type: "VARCHAR"
+    description: "Member identifier."
+  - name: "IS_MONTHLY_ACTIVE_CURRENT_DDER"
+    type: "BOOLEAN"
+    description: "TRUE if the member had an active qualified DD in this calendar month. Use for current DD state."
+  - name: "IS_EVER_CURRENT_DDER"
+    type: "BOOLEAN"
+    description: "TRUE if the member has ever been an active DDer as of this month. Use to identify the churned-DD pool (ever-DDer but not currently active DDer)."
+
+use_cases:
+  - "DD resurrection rate: use IS_MONTHLY_ACTIVE_CURRENT_DDER to identify churned vs active DDers month-over-month (see cookbook CK-009)."
+  - "Monthly growth accounting: new DDers, churned DDers, resurrected DDers."
+  - "TA (transaction active) tracking at member level."
+
+notes: >
+  For resurrection rate queries, combine with edw_db.core.member_details to get first_dd_dt,
+  which is used to filter out members who have not yet converted to DD.
+  IS_EVER_CURRENT_DDER flags the eligible resurrection pool (ever-DDers).
+  IS_MONTHLY_ACTIVE_CURRENT_DDER is the current-month DD state used to determine resurrection.
+  Canonical churn tenure segments: <=3 months (short-churn) vs >3 months (long-churn),
+  aligned with growth-analytics-context definition and CK-009.

@@ -1,0 +1,134 @@
+# Metric Diagnosis Context File
+# Fill in this file before running the agent for a new reporting period.
+# The agent reads this file to inform hypothesis generation and flag known drivers.
+#
+# Usage:
+#   python scripts/metric_diagnosis.py \
+#     --metric gross_new_dd \
+#     --reporting-month 2026-02 \
+#     --context context/chime_2026_02.yaml
+
+# ── Period ────────────────────────────────────────────────────────────────────
+reporting_month: "2026-02-01"   # First-of-month ISO date
+prior_month:     "2026-01-01"   # Defaults to one month prior if omitted
+
+# ── Anomaly threshold overrides (optional) ────────────────────────────────────
+# Remove or leave empty to use the agent's defaults from reference.md.
+thresholds:
+  gross_new_dd_pct:       8     # % MoM change to flag
+  early_dd_pct:          10     # % MoM change to flag for Early DD
+  late_dd_pct:           10
+  resurrected_dd_pct:    10
+  m2_retention_pp:        1.5   # Absolute pp MoM change to flag
+  early_dv_pct:           5
+  channel_share_pp:       5     # pp shift in any channel share to flag
+  ta_pct:                 5     # % QoQ change to flag
+
+# ── Per-metric context ─────────────────────────────────────────────────────────
+# For each metric, provide any known context that would affect interpretation.
+# All lists may be empty []. The agent uses this to:
+#   - Rule in or rule out hypothesis categories
+#   - Annotate the report with known explanations
+#   - Calibrate hypothesis confidence scores
+#
+# Fields per metric:
+#   historical_notes  — recurring patterns, known seasonal effects, past anomalies
+#   product_launches  — feature/product changes with date and expected direction
+#   experiments       — A/B tests with date range and expected direction
+#   policy_changes    — rule/eligibility/fraud-control changes; include the exact
+#                       effective date so the agent can check cohort overlap
+#   known_data_issues — pipeline delays, definition changes, instrumentation gaps
+
+metrics:
+
+  gross_new_dd:
+    historical_notes:
+      # Free-text notes about known patterns in past periods.
+      # Example: "Jan 2026: early DD count elevated due to New Year sign-up push"
+      - ""
+    product_launches:
+      # Format: "YYYY-MM-DD: description and expected direction of impact"
+      # Example: "2026-01-15: Chime Prime launched — expected to improve Early DD rate"
+      - ""
+    experiments:
+      # Format: "EXP-XXXX: description, date range, expected / observed direction"
+      # Example: "EXP-2312: Intro offer test, ran Jan–Feb 2026, +8% Early DD in treatment"
+      - ""
+    policy_changes:
+      # Format: "YYYY-MM-DD: description of rule/policy change and expected direction"
+      - ""
+    known_data_issues:
+      # Example: "Pipeline delay — Jan data not fully refreshed until Feb 5"
+      - ""
+
+  resurrected_dd:
+    historical_notes:
+      - ""
+    product_launches:
+      - ""
+    experiments:
+      - ""
+    policy_changes:
+      - ""
+    known_data_issues:
+      - ""
+
+  m2_retention:
+    historical_notes:
+      - >
+        Referral channel fraud issue (ongoing prior to Dec 16, 2025): fraudulent
+        DD activity inflated the Referral cohort with low-quality members who
+        subsequently churn, depressing M2 retention. Known dip months driven by
+        this issue: Aug 2025, Nov 2025, Dec 2025 (pre-Dec 16 sub-cohort).
+        When diagnosing Referral channel M2 retention, always check whether the
+        conversion cohort overlaps with a known fraud-impacted period before
+        attributing the rate decline to product or seasonal causes.
+    product_launches:
+      - ""
+    experiments:
+      - ""
+    policy_changes:
+      - >
+        2025-12-16: Card activation rule implemented — a member only receives
+        the referral bonus after activating their physical Chime card. This
+        removes the primary fraud vector (fake/churned accounts collecting
+        referral bonuses without genuine intent). Expected impact: significant
+        improvement in Referral channel M2 retention for cohorts that enrolled
+        on or after Dec 16, 2025. The Dec 2025 conversion cohort (which feeds
+        Feb 2026 M2) is a SPLIT cohort: pre-Dec-16 members are fraud-affected
+        (lower retention), post-Dec-16 members are clean (higher retention).
+        Do NOT treat the Dec cohort as homogeneous — always check if data allows
+        splitting by enrollment_date >= '2025-12-16' to isolate the clean sub-cohort.
+    known_data_issues:
+      - ""
+
+  early_dv:
+    historical_notes:
+      # Example: "Jan cohort (feeds Feb early DV) typically higher DV due to year-start payroll"
+      - ""
+    product_launches:
+      - ""
+    experiments:
+      - ""
+    policy_changes:
+      - ""
+    known_data_issues:
+      - ""
+
+  ta:
+    historical_notes:
+      # Example: "Q1 always elevated due to tax refund season"
+      - ""
+    product_launches:
+      - ""
+    experiments:
+      - ""
+    policy_changes:
+      - ""
+    known_data_issues:
+      - ""
+
+# ── Global notes ──────────────────────────────────────────────────────────────
+# Notes that apply across all metrics for this period.
+global_notes:
+  - ""

@@ -1,0 +1,7 @@
+table_name: "MEMBER_TRANSACTION_METRICS"
+dataset: "snowflake-data"
+full_path: "EDW_DB.MEMBER.MEMBER_TRANSACTION_METRICS"
+grain: "One row per DATE_KEY + USER_ID"
+description: "DD activity flags over lookback windows (L1, L7, L30, lifetime). Transaction metrics aligned with DD definitions."
+primary_key: ["DATE_KEY", "USER_ID"]
+updated_at: "2026-03-17"

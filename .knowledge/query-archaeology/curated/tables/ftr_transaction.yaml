@@ -1,0 +1,65 @@
+table_name: "FTR_TRANSACTION"
+dataset: "snowflake-data"
+full_path: "EDW_DB.CORE.FTR_TRANSACTION"
+grain: "transaction_id"
+schedule: "Daily"
+description: >
+  All settled transactions with derived metrics for Analytics.
+  Upstream of critical pipelines for Risk, Finance, and DSML.
+  Core transaction table — use for purchase volume, direct deposit analysis, ATM usage.
+
+primary_key: ["transaction_id"]
+
+key_columns:
+  - name: "type"
+    description: "Transaction type"
+    values: ["Purchase", "Fee", "Deposit", "Withdrawal", "Transfer"]
+
+  - name: "acct_in_out"
+    description: "Money direction"
+    values: ["In", "Out"]
+
+  - name: "settled_amt"
+    description: "Transaction amount (settled)"
+
+  - name: "is_purchase_transaction"
+    description: "Flag for purchase volume analysis"
+    type: boolean
+
+  - name: "is_qualified_dd"
+    description: "Qualifying direct deposit flag ($200+ from approved sources)"
+    type: boolean
+
+  - name: "dd_proforma_type"
+    description: "DD source type"
+    values: ["payroll", "government_benefit", "gig_instant_payout"]
+    notes: "Use for segmenting DD by source type"
+
+  - name: "is_atm_withdrawal"
+    description: "ATM withdrawal flag"
+    type: boolean
+
+  - name: "is_credit_builder_transaction"
+    description: "Credit Builder (CB) transaction flag"
+    type: boolean
+
+  - name: "program_bank"
+    description: "Banking partner that holds the member's deposit"
+    values: ["Bancorp", "Stride"]
+
+common_filters:
+  - "is_purchase_transaction = TRUE  -- purchase transactions only"
+  - "is_qualified_dd = TRUE          -- qualifying direct deposits ($200+)"
+  - "is_atm_withdrawal = TRUE        -- ATM withdrawals"
+  - "is_credit_builder_transaction = TRUE  -- Credit Builder transactions"
+  - "acct_in_out = 'In'             -- inbound money (deposits, transfers in)"
+  - "acct_in_out = 'Out'            -- outbound money (purchases, withdrawals)"
+
+gotchas:
+  - "Always filter to settled transactions — raw table may include pending/reversed entries"
+  - "settled_amt can be negative for reversals/refunds — check direction with acct_in_out"
+  - "is_qualified_dd = TRUE requires $200+ AND approved source — do not use settled_amt > 200 as a proxy"
+  - "dd_proforma_type uses proforma definition for historical consistency — prefer over raw type classification"
+  - "program_bank (Bancorp vs Stride) can affect join behavior if joining to program-specific tables"
+
+updated_at: "2026-03-17"

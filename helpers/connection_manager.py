@@ -36,6 +36,11 @@ except ImportError:
     _YAML_AVAILABLE = False
 
 
+# Module-level Snowflake connection cache — keyed by (account, user, authenticator).
+# Reuses the live connection within a Python session so externalbrowser auth fires once.
+_SNOWFLAKE_CACHE: dict = {}
+
+
 # Supported connection types and their required packages.
 SUPPORTED_TYPES = {
     "motherduck": {"package": "duckdb", "installed": _DUCKDB_AVAILABLE},
@@ -150,14 +155,30 @@ class ConnectionManager:
         return self
 
     def close(self):
-        """Close the active connection and release resources."""
-        if self._connection is not None:
+        """Release the instance's connection reference.
+
+        For Snowflake connections, the underlying connection is kept alive in
+        the module-level cache so that externalbrowser auth is not re-triggered
+        on the next query. To force a full disconnect (e.g. end of session),
+        call ConnectionManager.close_cached_snowflake().
+        """
+        if self._connection is not None and self._conn_type != "snowflake":
             try:
                 if hasattr(self._connection, "close"):
                     self._connection.close()
             except Exception:
                 pass
-            self._connection = None
+        self._connection = None
+
+    @staticmethod
+    def close_cached_snowflake():
+        """Explicitly close and evict all cached Snowflake connections."""
+        for conn in _SNOWFLAKE_CACHE.values():
+            try:
+                conn.close()
+            except Exception:
+                pass
+        _SNOWFLAKE_CACHE.clear()
 
     def test_connection(self):
         """Test connectivity with a lightweight probe.
@@ -223,6 +244,29 @@ class ConnectionManager:
                 tables = [row[0] for row in cur.fetchall()]
                 cur.close()
                 return tables
+            except Exception:
+                return []
+
+        elif self._conn_type == "snowflake" and self._connection:
+            try:
+                conn_config = self._config.get("connection", {})
+                database = conn_config.get("database")
+                schema = self._schema_prefix
+                if database:
+                    sql = (
+                        f"SELECT table_schema, table_name FROM {database}.information_schema.tables "
+                        "ORDER BY table_schema, table_name"
+                    )
+                else:
+                    sql = (
+                        "SELECT table_catalog, table_schema, table_name "
+                        "FROM information_schema.tables ORDER BY table_catalog, table_schema, table_name"
+                    )
+                cur = self._connection.cursor()
+                cur.execute(sql)
+                rows = cur.fetchall()
+                cur.close()
+                return [".".join(str(c) for c in row) for row in rows]
             except Exception:
                 return []
 
@@ -422,13 +466,43 @@ class ConnectionManager:
             )
 
         conn_config = self._config.get("connection", {})
-        self._connection = snowflake.connector.connect(
-            account=conn_config.get("account", ""),
-            user=conn_config.get("user", ""),
-            password=conn_config.get("password", ""),
-            warehouse=conn_config.get("warehouse", ""),
-            database=conn_config.get("database", ""),
-            schema=conn_config.get("schema", "public"),
+        kwargs = {
+            "account": conn_config.get("account", ""),
+            "user": conn_config.get("user", ""),
+            "warehouse": conn_config.get("warehouse", ""),
+        }
+        # Optional fields — only pass if set
+        if conn_config.get("database"):
+            kwargs["database"] = conn_config["database"]
+        if conn_config.get("schema"):
+            kwargs["schema"] = conn_config["schema"]
+        if conn_config.get("role"):
+            kwargs["role"] = conn_config["role"]
+        if conn_config.get("authenticator"):
+            kwargs["authenticator"] = conn_config["authenticator"]
+        elif conn_config.get("password"):
+            kwargs["password"] = conn_config["password"]
+
+        # Reuse a cached connection for the same account/user/authenticator so
+        # externalbrowser (Okta SSO) only fires once per Python session.
+        cache_key = (
+            conn_config.get("account", ""),
+            conn_config.get("user", ""),
+            conn_config.get("authenticator", ""),
         )
-        self._schema_prefix = conn_config.get("schema", "public")
+        cached = _SNOWFLAKE_CACHE.get(cache_key)
+        if cached is not None:
+            try:
+                cached.cursor().execute("SELECT 1")
+                self._connection = cached
+                self._schema_prefix = conn_config.get("schema", "")
+                self._conn_type = "snowflake"
+                return
+            except Exception:
+                # Cached connection is stale — fall through to create a new one.
+                _SNOWFLAKE_CACHE.pop(cache_key, None)
+
+        self._connection = snowflake.connector.connect(**kwargs)
+        _SNOWFLAKE_CACHE[cache_key] = self._connection
+        self._schema_prefix = conn_config.get("schema", "")
         self._conn_type = "snowflake"

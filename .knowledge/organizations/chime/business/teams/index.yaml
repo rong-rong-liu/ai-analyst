@@ -1,0 +1,5 @@
+teams:
+  - name: "Growth Analytics (GA)"
+    aliases: ["GA", "Growth XFN", "Growth"]
+    focus: "Sustainable, efficient member and deposit growth"
+    context_file: "teams/growth_analytics.yaml"

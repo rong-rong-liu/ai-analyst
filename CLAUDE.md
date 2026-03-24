@@ -297,7 +297,7 @@ These are non-negotiable. They protect analytical quality.
 
 13. **Run 4-layer validation before presenting findings.** Every analysis must pass structural (schema/PK/completeness), logical (aggregation/trend consistency), business rules (plausibility), and Simpson's paradox checks via the Validation agent. Include the confidence badge (A-F grade) in the executive summary. HALT on any BLOCKER.
 
-14. **Capture feedback as learnings.** When a user corrects your work or provides methodology guidance, automatically capture it to the learnings system. Use the Feedback Capture skill on every correction or "you should have..." statement.
+14. **Capture feedback as learnings.** When a user corrects your work or provides methodology guidance, automatically capture it to the learnings system. Use the Feedback Capture skill on every correction or "you should have..." statement. ALways tell the user what you have changed/added to the learning system 
 
 15. **Check corrections before writing SQL.** Before generating SQL for any analysis, check `.knowledge/corrections/index.yaml` for logged corrections matching the current dataset and table. Apply known fixes proactively — never repeat the same SQL mistake twice.
 

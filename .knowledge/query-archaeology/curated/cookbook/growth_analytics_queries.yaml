@@ -1,0 +1,231 @@
+entries:
+
+  - id: "CK-005"
+    title: "M2 DD Retention (Reporting-Month Anchored)"
+    description: >
+      M2 DD retention for a given reporting month. Conversion cohort = 2 months prior.
+      Measures % of Dec converters still DD in Feb (for Feb reporting month).
+    sql: |
+      -- M2 DD Retention: reporting_month anchored
+      -- Conversion cohort = 2 months before the reporting month
+      -- Example: reporting_month = '2026-02-01' → cohort = '2025-12-01'
+      WITH cohort AS (
+        SELECT
+          user_id,
+          DATE_TRUNC('month', first_dd_dt) AS conversion_month
+        FROM edw_db.core.member_details
+        WHERE DATE_TRUNC('month', first_dd_dt) = DATEADD('month', -2, DATE_TRUNC('month', CURRENT_DATE))
+      ),
+      m2_status AS (
+        SELECT
+          c.user_id,
+          c.conversion_month,
+          MAX(CASE WHEN is_current_dd_proforma = 1 THEN 1 ELSE 0 END) AS is_still_dd
+        FROM cohort c
+        LEFT JOIN analytics_db.dbt_cloud_prod.base__user_month bum
+          ON bum.user_id = c.user_id
+          AND bum.calendar_month = DATE_TRUNC('month', CURRENT_DATE)  -- reporting month
+        GROUP BY c.user_id, c.conversion_month
+      )
+      SELECT
+        conversion_month,
+        COUNT(*) AS cohort_size,
+        SUM(is_still_dd) AS still_dd_in_m2,
+        SUM(is_still_dd) / NULLIF(COUNT(*), 0) AS m2_dd_retention_rate
+      FROM m2_status
+      GROUP BY conversion_month
+    dataset: "snowflake-data"
+    tables:
+      - "edw_db.core.member_details"
+      - "analytics_db.dbt_cloud_prod.base__user_month"
+    tags: ["m2_retention", "dd_retention", "cohort", "growth", "reporting_month_anchored"]
+    notes: >
+      Reporting-month anchored: M2 Retention in Feb = Dec cohort.
+      Adjust DATEADD('month', -2, ...) offset as needed.
+      Use is_current_dd_proforma for historical consistency.
+    created_at: "2026-03-17"
+    use_count: 0
+
+  - id: "CK-006"
+    title: "Early DD/DV — Deposit Volume per Current DD (35 Days Post-Conversion)"
+    description: >
+      Early DV/DD for a reporting month. Cohort = members who converted to DD in the prior calendar month.
+      Sums deposit volume in the 35 days after each member's DD conversion date.
+    sql: |
+      -- Early DD/DV: reporting_month anchored
+      -- Cohort = members who converted to DD in the month prior to reporting month
+      -- DV window = 35 days from each member's first_dd_dt
+      WITH cohort AS (
+        SELECT
+          user_id,
+          first_dd_dt AS conversion_date,
+          DATE_TRUNC('month', first_dd_dt) AS conversion_month
+        FROM edw_db.core.member_details
+        WHERE DATE_TRUNC('month', first_dd_dt) = DATEADD('month', -1, DATE_TRUNC('month', CURRENT_DATE))
+          AND first_dd_dt IS NOT NULL
+      ),
+      dv_35d AS (
+        SELECT
+          c.user_id,
+          SUM(t.settled_amt) AS deposit_volume_35d
+        FROM cohort c
+        JOIN edw_db.core.ftr_transaction t
+          ON t.user_id = c.user_id
+          AND t.acct_in_out = 'In'
+          AND t.transaction_date >= c.conversion_date
+          AND t.transaction_date < DATEADD('day', 35, c.conversion_date)
+        GROUP BY c.user_id
+      )
+      SELECT
+        COUNT(DISTINCT c.user_id)                             AS current_dd_count,
+        SUM(COALESCE(dv.deposit_volume_35d, 0))               AS total_dv_35d,
+        SUM(COALESCE(dv.deposit_volume_35d, 0))
+          / NULLIF(COUNT(DISTINCT c.user_id), 0)              AS early_dv_per_dd
+      FROM cohort c
+      LEFT JOIN dv_35d dv ON dv.user_id = c.user_id
+    dataset: "snowflake-data"
+    tables:
+      - "edw_db.core.member_details"
+      - "edw_db.core.ftr_transaction"
+    tags: ["early_dv", "deposit_volume", "growth", "reporting_month_anchored", "35_days"]
+    notes: >
+      Reporting-month anchored: Early DV/DD in Feb = Jan conversion cohort (35-day window spills into Feb).
+      DV window is 35 days from conversion_date — not calendar month.
+      Verify transaction_date column name in FTR_TRANSACTION.
+    created_at: "2026-03-17"
+    use_count: 0
+
+  - id: "CK-007"
+    title: "Gross New DDer by Channel (Early vs Late DD)"
+    description: >
+      Monthly gross new DDers split by Early DD (converted within D30) vs Late DD (converted after D30),
+      with Early DD broken down by acquisition channel.
+    sql: |
+      SELECT
+        DATE_TRUNC('month', first_dd_dt) AS conversion_month,
+        CASE
+          WHEN DATEDIFF('day', enrollment_date, first_dd_dt) <= 30 THEN 'Early DD'
+          ELSE 'Late DD'
+        END AS dd_timing,
+        acquisition_channel,  -- replace with actual channel column name
+        COUNT(DISTINCT user_id) AS new_dders
+      FROM edw_db.core.member_details
+      WHERE first_dd_dt IS NOT NULL
+        AND first_dd_dt >= '2025-01-01'
+        AND LAST_DAY(first_dd_dt) < DATEADD('day', -30, CURRENT_DATE)  -- mature cohorts only
+      GROUP BY 1, 2, 3
+      ORDER BY 1, 2, 3
+    dataset: "snowflake-data"
+    tables: ["edw_db.core.member_details"]
+    tags: ["gross_new_dder", "early_dd", "late_dd", "channel", "growth", "d30"]
+    notes: >
+      Replace 'acquisition_channel' with the actual column name from member_details.
+      Early DD channels: paid, referral, organic, Pay Anyone (PA), others.
+      Only show mature cohorts (enrolled at least 30 days ago).
+    created_at: "2026-03-17"
+    use_count: 0
+
+  - id: "CK-008"
+    title: "Quarterly TA Goal Check (Last Month of Quarter)"
+    description: >
+      Transaction active count for the last month of each quarter — used for quarterly TA goal tracking.
+      Q1 = March, Q2 = June, Q3 = September, Q4 = December.
+    sql: |
+      SELECT
+        calendar_month,
+        COUNT(DISTINCT CASE WHEN is_transaction_active = 1 THEN user_id END) AS monthly_ta,
+        CASE
+          WHEN MONTH(calendar_month) IN (3, 6, 9, 12) THEN 'Quarter End'
+          ELSE 'Mid-Quarter'
+        END AS quarter_position
+      FROM analytics_db.dbt_cloud_prod.base__user_month
+      WHERE calendar_month >= '2026-01-01'
+      GROUP BY calendar_month
+      ORDER BY calendar_month
+    dataset: "snowflake-data"
+    tables: ["analytics_db.dbt_cloud_prod.base__user_month"]
+    tags: ["ta", "transaction_active", "quarterly_goal", "growth"]
+    notes: >
+      Quarterly goal = TA in the LAST MONTH of the quarter (not sum or average).
+      Q1 goal = March TA; Q2 goal = June TA.
+      Verify is_transaction_active column name in base__user_month.
+    created_at: "2026-03-17"
+    use_count: 0
+
+  - id: "CK-009"
+    title: "DD Resurrection Rate by Churn Tenure Segment"
+    description: >
+      Monthly DD resurrection rate: % of churned DD members (ever-DD, not current DD last month)
+      who re-establish a qualified DD in the current month.
+      Segmented by churn tenure: short-churn (<= 3 months ago) vs long-churn (> 3 months ago).
+      Denominator = churned DD pool in prior month; numerator = those who resurrected in current month.
+    sql: |
+      WITH monthly_dd_status AS (
+          SELECT
+              user_id,
+              MONTH,
+              IS_MONTHLY_ACTIVE_CURRENT_DDER AS is_dder,
+              IS_EVER_CURRENT_DDER AS is_ever_dder
+          FROM edw_db.growth.monthly_active_members
+          WHERE MONTH <= DATE_TRUNC('month', CURRENT_DATE)
+      ),
+      member_info AS (
+          SELECT user_id, first_dd_dt
+          FROM edw_db.core.member_details
+      ),
+      last_dder_month AS (
+          SELECT
+              user_id,
+              MONTH,
+              MAX(CASE WHEN is_dder = TRUE THEN MONTH END)
+                  OVER (PARTITION BY user_id ORDER BY MONTH ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS last_dd_month
+          FROM monthly_dd_status
+      ),
+      resurrection_base AS (
+          SELECT
+              curr.MONTH AS analysis_month,
+              curr.user_id,
+              mi.first_dd_dt,
+              ldm.last_dd_month,
+              DATEDIFF('month', ldm.last_dd_month, curr.MONTH) - 1 AS months_since_last_churn,
+              COALESCE(prev.is_dder, FALSE) AS was_dder_prev_month,
+              curr.is_dder AS is_dder_curr_month
+          FROM monthly_dd_status curr
+          LEFT JOIN monthly_dd_status prev
+              ON curr.user_id = prev.user_id
+              AND prev.MONTH = DATEADD('month', -1, curr.MONTH)
+          LEFT JOIN member_info mi ON curr.user_id = mi.user_id
+          LEFT JOIN last_dder_month ldm
+              ON curr.user_id = ldm.user_id
+              AND curr.MONTH = ldm.MONTH
+          WHERE curr.MONTH >= '2024-01-01'
+            AND mi.first_dd_dt < DATEADD('month', -1, curr.MONTH)
+      )
+      SELECT
+          analysis_month,
+          CASE
+              WHEN months_since_last_churn <= 3 THEN 'Churned <= 3 months ago'
+              ELSE 'Churned > 3 months ago'
+          END AS churn_tenure_segment,
+          COUNT(CASE WHEN was_dder_prev_month = FALSE THEN 1 END) AS total_churned_pool,
+          COUNT(CASE WHEN was_dder_prev_month = FALSE AND is_dder_curr_month = TRUE THEN 1 END) AS resurrected_count,
+          COUNT(CASE WHEN was_dder_prev_month = FALSE AND is_dder_curr_month = TRUE THEN 1 END)
+              / NULLIF(COUNT(CASE WHEN was_dder_prev_month = FALSE THEN 1 END), 0) AS resurrection_rate
+      FROM resurrection_base
+      GROUP BY 1, 2
+      ORDER BY 1, 2
+    dataset: "snowflake-data"
+    tables:
+      - "edw_db.growth.monthly_active_members"
+      - "edw_db.core.member_details"
+    tags: ["resurrection", "dd_resurrection", "churn", "resurrected_dder", "growth", "monthly"]
+    notes: >
+      Denominator = members where was_dder_prev_month = FALSE (churned DD pool in prior month).
+      Numerator = those who also have is_dder_curr_month = TRUE.
+      The mi.first_dd_dt < DATEADD('month', -1, curr.MONTH) filter ensures the member has been
+      an ever-DDer before the prior month — prevents newly converted members from appearing in the pool.
+      Canonical churn tenure segments: <=3 months (short-churn) vs >3 months (long-churn),
+      aligned with growth-analytics-context definition.
+      IS_MONTHLY_ACTIVE_CURRENT_DDER and IS_EVER_CURRENT_DDER are key columns from monthly_active_members.
+    created_at: "2026-03-19"
+    use_count: 0

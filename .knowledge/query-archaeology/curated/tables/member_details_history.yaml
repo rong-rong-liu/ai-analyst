@@ -1,0 +1,11 @@
+table_name: "MEMBER_DETAILS_HISTORY"
+dataset: "snowflake-data"
+full_path: "EDW_DB.CORE.MEMBER_DETAILS_HISTORY"
+grain: "One row per USER_ID per DATE_KEY (daily snapshots with TRUE HISTORICAL ROWS)"
+description: "Point-in-time analysis, historical trending, 'what was this member's state on date X?'"
+primary_key: ["USER_ID", "DATE_KEY"]
+gotchas:
+  - "Unlike MEMBER_DETAILS (latest snapshot only), this table has true historical rows — safe for trend analysis"
+related_tables:
+  - "MEMBER_DETAILS — latest snapshot only"
+updated_at: "2026-03-17"

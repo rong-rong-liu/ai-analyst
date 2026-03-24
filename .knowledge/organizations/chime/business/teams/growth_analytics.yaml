@@ -1,0 +1,188 @@
+# Growth Analytics (GA) Team Context
+# Apply when: deep dive analysis, metric diagnosis, GA team goals, monitored metrics
+
+team: "Growth Analytics"
+aliases: ["GA", "Growth XFN", "Growth"]
+
+# -----------------------------------------------------------------------
+# 1. Mission & 2026 Goals
+# -----------------------------------------------------------------------
+mission: >
+  Drive sustainable, efficient member and deposit growth by acquiring and
+  re-engaging Direct Deposit (DD) members, increasing early deposit volume,
+  and improving early retention.
+
+goals_2026:
+  primary:
+    name: "Consumer Channel DDer"
+    target: "5.76M total DDer"
+    definition: "Gross New DDer + Resurrected DDer"
+
+  secondary:
+    name: "Transaction Actives (TA)"
+    cadence: "Quarterly goal, monthly metric"
+    measurement: "Monthly TA in the LAST MONTH of the quarter (not a sum or average)"
+    example: "Q1 TA goal = monthly TA in March"
+
+  growth_metrics:
+    - "M2 DD Retention"
+    - "Early DD/DV (deposit volume per current DD within 35 days of conversion)"
+
+# -----------------------------------------------------------------------
+# 2. Focus Areas & Ownership
+# -----------------------------------------------------------------------
+focus_areas:
+  - id: 1
+    name: "Reinvent value prop for expansion segment"
+    bets: ["Chime Prime", "increase eligibility thresholds", "Chime Prime Upsell"]
+    metrics: ["Gross New DD", "Early DV/DD"]
+
+  - id: 2
+    name: "Step-change consumer acquisition channel growth"
+    bets: ["Iro offer", "channel expansion", "referral"]
+    metrics: ["Gross new DD"]
+
+  - id: 3
+    name: "Improve consumer DDer CRV, DD resurrection, and transaction active"
+    bets: ["Chime + Trial", "DD setup optimization", "DD resurrection", "increase transaction active"]
+    metrics: ["Gross new DD", "Gross resurrected DD", "TA"]
+
+  - id: 4
+    name: "Improve early stage retention"
+    bets: []
+    metrics: ["M2 DD retention"]
+
+# -----------------------------------------------------------------------
+# 3. Key Metrics (full definitions)
+# -----------------------------------------------------------------------
+metrics:
+
+  - name: "consumer_channel_dder"
+    display_name: "Consumer Channel DDer (Primary Goal)"
+    definition: "Total consumer channel Direct Deposit members = Gross New DDer + Resurrected DDer."
+    target_2026: "5.76M"
+    numerator: "Count of Gross New DDers + Resurrected DDers in the period"
+    denominator: "N/A (count metric)"
+    window: "Conversion month"
+    caveats:
+      - "Consumer channel only"
+      - "Qualified DD = deposit > $200"
+
+  - name: "gross_new_dder"
+    display_name: "Gross New DDer"
+    definition: "Members with a qualified direct deposit > $200 in the conversion month (first-time or new in that month)."
+    numerator: "Count of members with qualified DD > $200 in the conversion month"
+    denominator: "N/A"
+    window: "Conversion month"
+    sub_segments:
+      - name: "Early DD (30D DDer)"
+        definition: "Converted to DD in the calendar conversion month AND within 30 days since enrollment."
+        cohort: "Conversion month"
+        maturity: "D30 — cohort must be enrolled at least 30 days ago"
+        breakdowns: ["paid", "referral", "organic", "Pay Anyone (PA)", "others"]
+      - name: "Late DD"
+        definition: "Converted to DD in the calendar conversion month AND after 30 days since enrollment."
+        cohort: "Conversion month"
+
+  - name: "resurrected_dder"
+    display_name: "Resurrected DDer"
+    definition: "Members who had ever been an active DD, churned in a month, then became DD again in a later month."
+    numerator: "Count of members who re-converted to DD after a churn period"
+    denominator: "N/A"
+    window: "Conversion month"
+
+  - name: "transaction_active_ta"
+    display_name: "Transaction Actives (TA)"
+    definition: "Members who had at least one qualifying transaction in the period."
+    numerator: "Count of members with qualifying transaction in the month"
+    denominator: "N/A"
+    window: "Monthly; quarterly goal = TA in last month of the quarter"
+    goal_cadence: "Quarterly (Q goal = monthly TA in month 3 of the quarter)"
+    caveats:
+      - "Q1 goal = March monthly TA; Q2 goal = June monthly TA — NOT a sum or average"
+
+  - name: "m2_dd_retention"
+    display_name: "M2 DD Retention"
+    definition: "% of members remaining DD two months after their DD conversion month."
+    numerator: "Members who converted to DD in month M and are still DD in month M+2"
+    denominator: "Members who converted to DD in month M (cohort)"
+    window: "Two months after conversion month"
+    anchoring: >
+      Reporting-month anchored. M2 Retention in Feb = conversion cohort of Dec.
+      Measure whether Dec converters are still DD in Feb.
+    caveats:
+      - "Cohort = conversion month"
+      - "Still DD = qualified DD in M+2"
+
+  - name: "early_dd_dv"
+    display_name: "Early DD/DV (Deposit Volume per Current DD)"
+    definition: "Deposit volume per current DD within 35 days since their DD conversion."
+    numerator: "Total deposit volume in the 35 days after each member's DD conversion (for the cohort)"
+    denominator: "Count of current DDs in the cohort (members who converted in cohort month)"
+    window: "35 days since DD conversion"
+    anchoring: >
+      Reporting-month anchored. Early DV/DD in Feb = DV for members who converted in Jan
+      (their first 35 days post-conversion, which can spill into Feb).
+    caveats:
+      - "Current DD = converted in the cohort month"
+      - "DV summed over 35 days from conversion date (not calendar month)"
+
+# -----------------------------------------------------------------------
+# 4. Deep Dive & Diagnosis Expectations
+# -----------------------------------------------------------------------
+analysis_standards:
+  - "State the metric clearly — use definitions above; if metric not listed, define (numerator, denominator, window, maturity) before analyzing"
+  - "Check maturity & cohort — ensure cohorts are mature (D30 requires enrollment at least 30 days ago); call out segment"
+  - "Compare apples to apples — same definition, same window, same maturity when comparing periods or segments"
+  - "Hypotheses & breakdowns — when diagnosing movement, suggest breakdowns by segment, product, funnel step, channel"
+  - "Output full final SQL; use Snowflake to run queries and return results"
+
+# -----------------------------------------------------------------------
+# 5. Data Sources
+# -----------------------------------------------------------------------
+data_sources:
+  - table: "edw_db.core.member_details"
+    notes: "Prefer over test tables"
+  - reference: "chime-tf/environments/snowflake-prod/views_sql_script"
+    notes: "Table/docs reference for GA-relevant views"
+
+# -----------------------------------------------------------------------
+# 6. GA Glossary
+# -----------------------------------------------------------------------
+glossary:
+  - term: "DD"
+    definition: "Direct Deposit; qualified DD = deposit > $200"
+
+  - term: "DDer"
+    definition: "Member who is/was an active Direct Deposit member (qualified DD)"
+
+  - term: "Gross new DDer"
+    definition: "Member with qualified DD > $200 in the conversion month (first time or new in that month)"
+
+  - term: "Resurrected DDer"
+    definition: "Member who had ever been active DD, churned in a month, then became DD again in a later month"
+
+  - term: "Early DD"
+    aliases: ["30D DDer"]
+    definition: "Converted to DD within 30 days since enrollment; cohorted by conversion month"
+
+  - term: "Late DD"
+    definition: "Converted to DD after 30 days since enrollment; cohorted by conversion month"
+
+  - term: "Conversion month"
+    definition: "Calendar month in which the member converted to DD"
+
+  - term: "Reporting-month anchored"
+    definition: >
+      Metric is defined relative to the month we report in.
+      Example: M2 Retention in Feb = Dec conversion cohort (2 months prior).
+      Early DV/DD in Feb = Jan conversion cohort (1 month prior, 35-day window spills into Feb).
+
+  - term: "TA"
+    definition: "Transaction actives; secondary goal is quarterly but metric is monthly — Q1 goal = monthly TA in March (last month of quarter)"
+
+  - term: "M2 DD retention"
+    definition: "% of a DD conversion cohort still DD two months after conversion month"
+
+  - term: "Early DD/DV"
+    definition: "Deposit volume per current DD over 35 days since their DD conversion; reporting-month anchored"

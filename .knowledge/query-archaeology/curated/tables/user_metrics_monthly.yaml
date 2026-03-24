@@ -1,0 +1,7 @@
+table_name: "USER_METRICS_MONTHLY"
+dataset: "snowflake-data"
+full_path: "EDW_DB.MEMBER.USER_METRICS_MONTHLY"
+grain: "One row per DATE_KEY (month) + USER_ID"
+description: "Monthly product usage — SpotMe, MyPay, Pay Anyone, savings, referrals. Monthly KPIs."
+primary_key: ["DATE_KEY", "USER_ID"]
+updated_at: "2026-03-17"

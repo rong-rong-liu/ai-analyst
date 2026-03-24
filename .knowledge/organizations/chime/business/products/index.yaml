@@ -1,0 +1,63 @@
+# Chime Product Catalog
+
+products:
+
+  - name: "Checking Account"
+    aliases: ["Spending Account"]
+    type: product
+    description: "Primary transaction account with Chime Visa debit card. Core product all members receive at enrollment."
+    key_metrics: ["purchase_volume", "transaction_active_rate", "ach_deposit_volume"]
+
+  - name: "Savings Account"
+    type: product
+    description: "High-yield savings with automatic savings features including round-ups and percentage-based transfers from checking."
+    key_metrics: ["savings_balance", "savings_adoption_rate"]
+
+  - name: "Credit Builder"
+    aliases: ["CB"]
+    type: product
+    status: "legacy — being phased out in favor of Chime Card"
+    description: >
+      Secured credit card to help members build credit history. No credit check required.
+      Members transfer money from Checking into the Credit Builder secured deposit account to fund purchases.
+      Has both a secured deposit account and secured credit account behind the scenes.
+    key_metrics: ["cb_adoption_rate", "cb_utilization", "credit_score_improvement"]
+
+  - name: "Chime Card"
+    aliases: ["CC"]
+    type: product
+    launched: "2025"
+    description: >
+      Secured credit card launched in 2025. Offered to new members automatically; existing members can upgrade.
+      Single balance design — all funds held in a secured deposit account also usable for debit card, ACH transfers, ATM, etc.
+      Successor to Credit Builder.
+    key_metrics: ["cc_adoption_rate", "cc_utilization"]
+
+  - name: "SpotMe"
+    type: feature
+    description: "Fee-free overdraft protection up to $200. Eligible for members with qualifying direct deposits."
+    eligibility: "Requires qualifying direct deposit"
+    key_metrics: ["spotme_adoption_rate", "spotme_utilization", "spotme_repayment_rate"]
+
+  - name: "Pay Friends"
+    aliases: ["P2P", "IP2P"]
+    type: feature
+    description: "Peer-to-peer payment feature to send money to other Chime members instantly."
+    key_metrics: ["p2p_send_volume", "p2p_sender_rate"]
+
+  - name: "MyPay"
+    type: product
+    description: "Payroll advance product allowing members to access earned wages before payday."
+    key_metrics: ["mypay_adoption_rate", "advance_volume"]
+
+  - name: "Early Pay Access"
+    aliases: ["EPA"]
+    type: feature
+    description: "Feature allowing members to receive paychecks up to 2 days early via early ACH posting."
+    key_metrics: ["epa_usage_rate"]
+
+  - name: "Outbound Instant Transfer"
+    aliases: ["OIT"]
+    type: feature
+    description: "Instant transfer out of Chime accounts to external debit cards."
+    key_metrics: ["oit_volume", "oit_sender_rate"]

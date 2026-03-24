@@ -1,0 +1,7 @@
+table_name: "USER_ACTIVES_DAILY"
+dataset: "snowflake-data"
+full_path: "EDW_DB.MEMBER.USER_ACTIVES_DAILY"
+grain: "One row per DATE_KEY + USER_ID"
+description: "Daily active user definitions — app, web, spend, DD, product attach. Use for time-series of product activity and L1/L30 flags."
+primary_key: ["DATE_KEY", "USER_ID"]
+updated_at: "2026-03-17"

@@ -1,0 +1,90 @@
+entries:
+
+  - id: "CK-001"
+    title: "Monthly Current DDer Count"
+    description: "Count distinct Current DDers per calendar month using proforma definition."
+    sql: |
+      SELECT
+        calendar_month,
+        COUNT(DISTINCT CASE WHEN is_current_dd_proforma = 1 THEN user_id END) AS current_dders
+      FROM analytics_db.dbt_cloud_prod.base__user_month
+      GROUP BY calendar_month
+      ORDER BY calendar_month
+    dataset: "snowflake-data"
+    tables: ["analytics_db.dbt_cloud_prod.base__user_month"]
+    tags: ["dder", "monthly", "current_dd", "proforma"]
+    notes: "Use is_current_dd_proforma (not is_current_dd) for historical trend analysis."
+    created_at: "2026-03-17"
+    use_count: 0
+
+  - id: "CK-002"
+    title: "Gross Retention Rate by Tenure"
+    description: "Monthly DD retention rate by months_since_conversion. Gross retention = Retained / (Retained + Churned)."
+    sql: |
+      SELECT
+        calendar_month,
+        months_since_conversion_proforma,
+        SUM(CASE WHEN current_dd_type_proforma = 'Retained' THEN 1 ELSE 0 END)
+          / NULLIF(SUM(CASE WHEN current_dd_type_proforma IN ('Retained', 'Churned') THEN 1 ELSE 0 END), 0)
+          AS gross_retention_rate
+      FROM analytics_db.dbt_cloud_prod.base__user_month
+      WHERE current_dd_type_proforma IN ('Retained', 'Churned')
+      GROUP BY calendar_month, months_since_conversion_proforma
+      ORDER BY calendar_month, months_since_conversion_proforma
+    dataset: "snowflake-data"
+    tables: ["analytics_db.dbt_cloud_prod.base__user_month"]
+    tags: ["retention", "monthly", "tenure", "proforma", "gross_retention"]
+    notes: >
+      Use gross retention for M2+ tenure. Use net retention (cohort-based) for M1/M2 early tenure.
+      months_since_conversion_proforma is 0-indexed.
+    created_at: "2026-03-17"
+    use_count: 0
+
+  - id: "CK-003"
+    title: "D30 Conversion Rate by Enrollment Month"
+    description: "DD and activation conversion rates within 30 days of enrollment. Only includes fully mature cohorts."
+    sql: |
+      SELECT
+        DATE_TRUNC('month', enrollment_date) AS enrollment_month,
+        SUM(CASE WHEN DATEDIFF('day', enrollment_date, first_dd_dt) <= 30 THEN 1 ELSE 0 END)
+          / NULLIF(COUNT(*), 0) AS d30_dd_conversion,
+        SUM(CASE WHEN DATEDIFF('day', enrollment_date, first_activity_date) <= 30 THEN 1 ELSE 0 END)
+          / NULLIF(COUNT(*), 0) AS d30_ta_conversion
+      FROM edw_db.core.member_details
+      WHERE enrollment_date >= '2025-01-01'
+        AND LAST_DAY(enrollment_date) < DATEADD('day', -30, CURRENT_DATE)
+      GROUP BY 1
+      ORDER BY 1
+    dataset: "snowflake-data"
+    tables: ["edw_db.core.member_details"]
+    tags: ["d30", "conversion", "enrollment", "cohort", "activation"]
+    notes: >
+      LAST_DAY(enrollment_date) < DATEADD('day', -30, CURRENT_DATE) ensures cohort is fully mature.
+      February 2026 D30 cohort isn't mature until April 2026.
+      Snowflake syntax: DATE_TRUNC('month', ...) and DATEDIFF('day', ...).
+    created_at: "2026-03-17"
+    use_count: 0
+
+  - id: "CK-004"
+    title: "Growth Accounting (New / Retained / Winback / Churned)"
+    description: "Monthly growth accounting breakdown for Current DDers."
+    sql: |
+      SELECT
+        calendar_month,
+        COUNT(CASE WHEN current_dd_type_proforma = 'New'      THEN 1 END) AS new_dders,
+        COUNT(CASE WHEN current_dd_type_proforma = 'Retained' THEN 1 END) AS retained_dders,
+        COUNT(CASE WHEN current_dd_type_proforma = 'Winback'  THEN 1 END) AS resurrected_dders,
+        COUNT(CASE WHEN current_dd_type_proforma = 'Churned'  THEN 1 END) AS churned_dders
+      FROM analytics_db.dbt_cloud_prod.base__user_month
+      WHERE is_current_dd_proforma = 1
+         OR current_dd_type_proforma = 'Churned'
+      GROUP BY calendar_month
+      ORDER BY calendar_month
+    dataset: "snowflake-data"
+    tables: ["analytics_db.dbt_cloud_prod.base__user_month"]
+    tags: ["growth_accounting", "new", "retained", "churned", "winback", "proforma"]
+    notes: >
+      Ending Total = Beginning + New + Resurrected - Churned.
+      Include Churned rows (is_current_dd_proforma = 0) to capture churn component.
+    created_at: "2026-03-17"
+    use_count: 0

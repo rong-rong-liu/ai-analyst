@@ -1,0 +1,12 @@
+table_name: "DIM_MEMBER"
+dataset: "snowflake-data"
+full_path: "EDW_DB.CORE.DIM_MEMBER"
+grain: "One row per USER_ID + DATE_KEY (daily snapshot)"
+description: "Member demographics, account counts, geographic segmentation, employee identification, SpotMe enrollment."
+primary_key: ["USER_ID", "DATE_KEY"]
+gotchas:
+  - "DIM_MEMBER is a SUBSET of DIM_USER — contains only enrolled members with checking accounts"
+  - "DIM_USER includes all users (enrolled + non-enrolled prospects). Use DIM_USER for pre-enrollment/referral data."
+related_tables:
+  - "DIM_USER — superset, includes non-enrolled prospects and referral relationships"
+updated_at: "2026-03-17"

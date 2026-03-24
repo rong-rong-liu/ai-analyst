@@ -1,0 +1,18 @@
+table_name: "MEMBER_DETAILS"
+dataset: "snowflake-data"
+full_path: "EDW_DB.CORE.MEMBER_DETAILS"
+grain: "One row per member (current snapshot)"
+description: >
+  Member-level segmentation, enrollment/acquisition analysis, 'who is this member?' queries,
+  joining member context to fact tables. SNAPSHOT TABLE — holds latest state only.
+primary_key: ["USER_ID"]
+common_filters:
+  - "enrollment_date >= '2025-01-01'  -- filter to recent cohorts"
+  - "LAST_DAY(enrollment_date) < DATEADD('day', -30, CURRENT_DATE)  -- mature D30 cohorts only"
+gotchas:
+  - "SNAPSHOT TABLE — only holds latest member state. For historical trends use MEMBER_DETAILS_HISTORY or base__user_month."
+  - "For D30 conversion: filter LAST_DAY(enrollment_date) < DATEADD('day', -30, CURRENT_DATE) to ensure cohort is fully mature"
+related_tables:
+  - "MEMBER_DETAILS_HISTORY — same data but with TRUE HISTORICAL ROWS (daily snapshots)"
+  - "base__user_month — monthly grain for retention/conversion analysis"
+updated_at: "2026-03-17"

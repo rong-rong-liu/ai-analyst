@@ -1,0 +1,12 @@
+# Snowflake connection config for the metric-diagnosis agent.
+# Copy this file to snowflake_config.yaml and fill in your credentials.
+# snowflake_config.yaml is gitignored — never commit credentials.
+
+type: snowflake
+connection:
+  account: "your-account.snowflakecomputing.com"   # e.g. ab12345.us-east-1
+  user: "your.name@chime.com"
+  authenticator: "externalbrowser"                 # SSO via browser (recommended)
+  warehouse: "YOUR_WAREHOUSE"
+  database: "EDW_DB"                               # default db; queries specify full paths
+  role: "YOUR_ROLE"                                # read-only role

@@ -1,16 +1,51 @@
 # Corrections Log — records analyst mistakes and their fixes
 # Populated by /log-correction skill, read by analysis agents pre-flight
 schema_version: 1
-corrections: []
-# Entry format:
-#   - id: "CORR-001"
-#     date: "2026-01-15"
-#     severity: "high"  # low | medium | high | critical
-#     category: "join_error"  # join_error | filter_missing | metric_definition | date_range | aggregation | other
-#     dataset: "my_dataset"
-#     tables: ["orders", "users"]
-#     description: "Inner join dropped 15% of orders with null user_id"
-#     fix: "Use LEFT JOIN and handle nulls explicitly"
-#     sql_before: "SELECT ... FROM orders JOIN users ON ..."
-#     sql_after: "SELECT ... FROM orders LEFT JOIN users ON ..."
-#     prevented_by: "Always check join cardinality before and after"
+corrections:
+
+  - id: "CORR-002"
+    date: "2026-03-17"
+    severity: "high"
+    category: "metric_definition"
+    dataset: "snowflake-data"
+    tables: ["analytics_db.dbt_cloud_prod.base__user_month"]
+    description: >
+      qualified_payroll_dd column has data quality issues: 134K+ rows show
+      qualified_payroll_dd = 0.00 despite is_qualified_payroll_dd_proforma = 1.
+      These are data population gaps, not real $0 payroll DD volume.
+      Including these rows in volume bucket analysis creates a spurious '<$200' bucket.
+    fix: >
+      Always filter WHERE qualified_payroll_dd >= 200 when using this column
+      for volume/amount analysis. Do not treat 0 values as real signal.
+    prevented_by: >
+      When creating volume buckets on a column with a known minimum (here $200),
+      check whether values below that minimum actually exist and investigate
+      before including them in analysis.
+
+  - id: "CORR-001"
+    date: "2026-03-17"
+    severity: "high"
+    category: "metric_definition"
+    dataset: "snowflake-data"
+    tables: ["analytics_db.dbt_cloud_prod.base__user_month"]
+    description: >
+      Interpreted 'M2 conversion' as enrollment-to-DD conversion rate
+      (months_since_enrollment = 2, is_current_dd_proforma). This is WRONG.
+      M2 conversion at Chime = M2 DD RETENTION: % of members who already converted
+      to DD that are still active DDers at M2 post-conversion tenure.
+    fix: >
+      Use months_since_conversion_proforma = 2 to filter to M2 post-conversion cohort.
+      Measure is_current_dd_proforma to check if still an active DDer.
+      Group by conversion_month_proforma year for YoY comparison.
+      Net retention convention: DDers still active at M2 / original conversion cohort size.
+    sql_before: |
+      SELECT ... FROM base__user_month
+      WHERE months_since_enrollment = 2   -- WRONG
+    sql_after: |
+      SELECT ... FROM base__user_month
+      WHERE months_since_conversion_proforma = 2   -- CORRECT
+    prevented_by: >
+      When user says 'M2 conversion', confirm whether they mean
+      enrollment-to-DD conversion (months_since_enrollment) or
+      post-conversion DD retention (months_since_conversion_proforma).
+      At Chime, 'M2 conversion' = the latter.

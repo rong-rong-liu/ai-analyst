@@ -1,0 +1,267 @@
+# Chime Business Glossary
+# Domain-specific terms, acronyms, and definitions
+
+terms:
+
+  # --- Member Status & Lifecycle ---
+  - term: "DD"
+    full_name: "Direct Deposit"
+    definition: "An electronic deposit of funds (typically payroll or benefits) directly into a member's account."
+    category: member_status
+
+  - term: "DDer"
+    full_name: "Direct Depositor"
+    definition: "A member who has received a qualifying direct deposit."
+    category: member_status
+
+  - term: "Current DDer"
+    full_name: "Current Direct Depositor"
+    definition: "A member who received a qualifying DD ($200+) in the current period (day/month). The most critical engagement segment."
+    category: member_status
+
+  - term: "Active DDer"
+    full_name: "Active Direct Depositor"
+    definition: "A member who is or has been a Current DDer AND is currently transaction active."
+    category: member_status
+
+  - term: "PA"
+    full_name: "Primary Account"
+    definition: "A member who uses Chime as their primary bank, based on deposit volume or transaction frequency thresholds."
+    category: member_status
+
+  - term: "TA"
+    full_name: "Transaction Active"
+    definition: "A member who had at least one qualifying transaction in the period."
+    category: member_status
+
+  - term: "qualifying direct deposit"
+    definition: "A deposit of $200 or more from payroll, government benefits (Social Security, unemployment), gig economy instant payouts (Uber, DoorDash), or child support."
+    category: member_status
+
+  # --- Lifecycle State Values (used in base tables) ---
+  - term: "New"
+    definition: "First period in this status (e.g., first month as Current DDer)."
+    category: lifecycle_state
+    context: "Used as a value in lifecycle_type columns in base tables."
+
+  - term: "Retained"
+    definition: "Was in this status last period AND still in this status."
+    category: lifecycle_state
+
+  - term: "Churned"
+    definition: "Was in this status last period but NOT in this status now."
+    category: lifecycle_state
+
+  - term: "Winback"
+    definition: "Was NOT in this status last period but IS now (resurrected)."
+    aliases: ["resurrected"]
+    category: lifecycle_state
+
+  # --- Time-Based Metrics ---
+  - term: "D30"
+    full_name: "Day 30"
+    definition: "Within 30 days of enrollment. Always exactly 30 days. Spans calendar months. Use for comparing conversion rates across cohorts fairly (consistent window)."
+    category: time_metric
+    notes: "d30_cvr = conversion rate within 30 days; d30_active_rate = activation rate within 30 days"
+
+  - term: "D90"
+    full_name: "Day 90"
+    definition: "Within 90 days of enrollment."
+    category: time_metric
+
+  - term: "D180"
+    full_name: "Day 180"
+    definition: "Within 180 days of enrollment."
+    category: time_metric
+
+  - term: "L30"
+    full_name: "Last 30 Days"
+    definition: "Rolling 30-day lookback window."
+    category: time_metric
+
+  - term: "M0"
+    full_name: "Month 0"
+    definition: "Enrollment month (calendar month of enrollment). Length varies 1-31 days depending on when in the month the user enrolled. Column: months_since_enrollment = 0."
+    category: time_metric
+    notes: "m0_dd_cvr = DD conversion rate in enrollment month; m0_activation_rate = activation rate in M0. Do NOT use interchangeably with D30."
+
+  - term: "M1"
+    full_name: "Month 1"
+    definition: "First calendar month after enrollment. Column: months_since_enrollment = 1."
+    category: time_metric
+    notes: "m1_dd_cvr = DD conversion rate in month 1"
+
+  - term: "M2+"
+    full_name: "Month 2 Plus"
+    definition: "Second month after enrollment and beyond."
+    category: time_metric
+
+  # --- Financial & Unit Economics ---
+  - term: "MUE"
+    full_name: "Member Unit Economics"
+    definition: "Framework for calculating per-member revenue, costs, and profitability."
+    category: finance
+
+  - term: "LTV"
+    full_name: "Lifetime Value"
+    definition: "Total projected value a member will generate over their lifetime."
+    category: finance
+
+  - term: "CM"
+    full_name: "Contribution Margin"
+    definition: "Revenue minus variable costs (interchange revenue - transaction costs - losses)."
+    category: finance
+
+  - term: "CAC"
+    full_name: "Customer Acquisition Cost"
+    definition: "Cost to acquire a new member (marketing spend / new members)."
+    category: finance
+
+  - term: "CPE"
+    full_name: "Cost Per Enrollment"
+    definition: "Marketing spend divided by enrollments."
+    category: finance
+
+  - term: "DV"
+    full_name: "Deposit Volume"
+    definition: "Total dollar amount of deposits."
+    category: finance
+
+  - term: "PV"
+    full_name: "Purchase Volume"
+    definition: "Total dollar amount of purchases/spend."
+    category: finance
+
+  # --- Deposit & Transfer Types ---
+  - term: "ACH"
+    full_name: "Automated Clearing House"
+    definition: "Electronic bank-to-bank transfer network. Typically 3-5 day settlement."
+    category: transfer_type
+
+  - term: "VMT"
+    full_name: "Visa Money Transfer"
+    definition: "Instant debit card-to-debit card transfer via Visa network."
+    category: transfer_type
+
+  - term: "IIT"
+    full_name: "Instant Incoming Transfer"
+    definition: "Real-time inbound transfer from external debit card."
+    category: transfer_type
+
+  - term: "MCD"
+    full_name: "Mobile Check Deposit"
+    definition: "Depositing a check by taking a photo in the app."
+    category: transfer_type
+
+  - term: "IP2P"
+    full_name: "Internal P2P"
+    definition: "Peer-to-peer transfer between Chime members (Pay Friends feature)."
+    category: transfer_type
+
+  - term: "OIT"
+    full_name: "Outbound Instant Transfer"
+    definition: "Instant transfer out of Chime accounts."
+    category: transfer_type
+
+  # --- Products & Features ---
+  - term: "CB"
+    full_name: "Credit Builder"
+    definition: "Chime's legacy secured credit card product for building credit. No credit check required. Being phased out in favor of Chime Card (CC)."
+    aliases: ["Credit Builder"]
+    category: product
+
+  - term: "CC"
+    full_name: "Chime Card"
+    definition: "Chime's secured credit card launched in 2025. Offered to new members automatically; existing members can upgrade. Single balance design — all funds held in a secured deposit account usable for debit card, ACH transfers, ATM, etc."
+    aliases: ["Chime Card"]
+    category: product
+
+  - term: "SpotMe"
+    definition: "Fee-free overdraft protection up to $200 for eligible members with qualifying direct deposits."
+    category: product
+
+  - term: "P2P"
+    full_name: "Peer-to-Peer"
+    definition: "Person-to-person payments via the Pay Friends feature."
+    category: product
+
+  - term: "EPA"
+    full_name: "Early Pay Access"
+    definition: "Feature allowing members to receive paychecks up to 2 days early."
+    category: product
+
+  - term: "MyPay"
+    definition: "Payroll advance product allowing members to access earned wages before payday."
+    category: product
+
+  # --- Acquisition Channels ---
+  - term: "PLM"
+    full_name: "Product-Led Marketing"
+    definition: "Acquisition through product features/virality rather than paid ads."
+    category: acquisition
+
+  - term: "Pay Anyone"
+    definition: "Acquisition channel where non-members receive money from Chime members, driving new signups."
+    category: acquisition
+
+  # --- Data & Systems ---
+  - term: "EDW"
+    full_name: "Enterprise Data Warehouse"
+    definition: "Central data repository (Snowflake)."
+    category: data
+
+  - term: "RDF"
+    full_name: "Raw Data Feed"
+    definition: "Daily transaction data file from payment processor."
+    category: data
+
+  - term: "FTR"
+    full_name: "Fact Transaction"
+    definition: "Core transaction table in the data warehouse."
+    category: data
+
+  - term: "MCC"
+    full_name: "Merchant Category Code"
+    definition: "4-digit code classifying merchant business type."
+    category: data
+
+  - term: "CEX"
+    full_name: "Consumer Expenditure"
+    definition: "Bureau of Labor Statistics spending category classification."
+    category: data
+
+  - term: "EVC"
+    full_name: "Event Variable Costs"
+    definition: "Per-event costs (card issuance, member services contacts, etc.)."
+    category: data
+
+  # --- Analytics & Reporting ---
+  - term: "MR"
+    full_name: "Metrics Review"
+    definition: "Weekly/monthly business review of key metrics."
+    category: analytics
+
+  - term: "GAPA"
+    full_name: "Geographic Analysis"
+    definition: "Analysis of member metrics by geographic region."
+    category: analytics
+
+  - term: "MVM"
+    full_name: "Member Value Model"
+    definition: "Predictive model for member lifetime value."
+    category: analytics
+
+  - term: "Proforma"
+    definition: "Retroactively applied definition for consistent historical comparison."
+    category: analytics
+
+  # --- Banking Partners ---
+  - term: "Bancorp"
+    full_name: "The Bancorp Bank"
+    definition: "Primary FDIC-insured banking partner. Members assigned to Bancorp or Stride at enrollment."
+    category: banking_partner
+
+  - term: "Stride"
+    full_name: "Stride Bank"
+    definition: "Secondary FDIC-insured banking partner."
+    category: banking_partner

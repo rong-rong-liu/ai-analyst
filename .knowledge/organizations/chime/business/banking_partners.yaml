@@ -1,0 +1,19 @@
+# Chime Banking Partners
+# Chime is not a bank — it partners with FDIC-insured banks to provide deposit accounts.
+
+partners:
+  - name: "The Bancorp Bank"
+    aliases: ["Bancorp"]
+    role: "Primary banking partner"
+    fdic_insured: true
+    notes: "Members are assigned to Bancorp or Stride at enrollment."
+
+  - name: "Stride Bank"
+    aliases: ["Stride"]
+    role: "Secondary banking partner"
+    fdic_insured: true
+
+notes: >
+  When analyzing member data, bank_partner or program_bank columns will indicate
+  which partner holds the member's deposits. Keep in mind that some metrics or
+  behaviors may differ slightly by banking partner.

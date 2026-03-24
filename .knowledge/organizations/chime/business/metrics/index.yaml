@@ -1,0 +1,132 @@
+# Chime Key Business Metrics
+
+metrics:
+
+  - name: "current_dder_count"
+    display_name: "Current DDers"
+    definition: "Members who received a qualifying direct deposit ($200+) in the current period."
+    column: "is_current_dd_proforma = 1"
+    table: "analytics_db.dbt_cloud_prod.base__user_month"
+    why_it_matters: "Primary engagement metric. DD members have higher LTV, lower churn, and unlock product eligibility."
+    guardrails: ["churn_rate", "spotme_loss_rate"]
+    notes: "Use is_current_dd_proforma (not is_current_dd) for historical trend analysis."
+
+  - name: "dd_conversion_rate_d30"
+    display_name: "D30 DD Conversion Rate"
+    definition: "% of enrolled members who received a qualifying DD within 30 days of enrollment."
+    formula: "D30 DDers / Enrollments"
+    column_name: "d30_cvr"
+    table: "edw_db.core.member_details"
+    notes: >
+      Use D30 (not M0) for fair cross-cohort comparison — consistent 30-day window.
+      Only show fully mature cohorts: LAST_DAY(enrollment_date) < DATEADD('day', -30, CURRENT_DATE).
+    guardrails: ["cac"]
+
+  - name: "dd_conversion_rate_m0"
+    display_name: "M0 DD Conversion Rate"
+    definition: "% of enrolled members who received a qualifying DD in their enrollment calendar month."
+    formula: "M0 DDers / Enrollments"
+    column_name: "m0_dd_cvr"
+    notes: "M0 window length varies 1-31 days. Use for calendar-month reporting, not cross-cohort comparison."
+
+  - name: "dd_conversion_rate_m1"
+    display_name: "M1 DD Conversion Rate"
+    definition: "% of enrolled members who received a qualifying DD in the first calendar month after enrollment."
+    formula: "M1 DDers / Enrollments"
+    column_name: "m1_dd_cvr"
+
+  - name: "gross_retention_rate"
+    display_name: "Gross Retention Rate"
+    definition: "% of members who were Current DDers last period and remained Current DDers this period."
+    formula: "Retained / (Retained + Churned)"
+    example: "100 Current DDers last month, 85 still Current DDers → 85% gross retention"
+    when_to_use: "M2+ tenure (later tenure, month-over-month tracking)"
+    table: "analytics_db.dbt_cloud_prod.base__user_month"
+    notes: "Use current_dd_type_proforma IN ('Retained','Churned') in denominator."
+
+  - name: "net_retention_rate"
+    display_name: "Net Retention Rate"
+    definition: "Cohort-based metric — % of original conversion cohort still active as Current DDers. Always cohorted by first DD month (conversion_month)."
+    formula: "Current DDers from Cohort / Original Cohort Size at Conversion"
+    when_to_use: "M1, M2 tenure (early tenure, tracking cohort performance vs original size)"
+    notes: >
+      Net retention is always ≤ 100%.
+      Denominator = original cohort size at conversion (never changes).
+      Winbacks increase numerator but NOT denominator.
+
+  - name: "churn_rate"
+    display_name: "Churn Rate"
+    definition: "% of Current DDers who were active last period but not this period."
+    formula: "1 - Gross Retention Rate"
+
+  - name: "resurrection_rate"
+    display_name: "Resurrection Rate (Winback Rate)"
+    definition: "% of previously churned Current DDers who returned to active status."
+    formula: "Resurrected / Prior Period Total"
+
+  - name: "growth_accounting"
+    display_name: "Growth Accounting"
+    definition: "Ending Total = Beginning Total + New + Resurrected - Churned"
+    components:
+      New: "First time entering this status"
+      Retained: "Was in status last period, still in status"
+      Resurrected: "Was NOT in status last period, IS now (Winback)"
+      Churned: "Was in status last period, NOT in status now"
+    table: "analytics_db.dbt_cloud_prod.base__user_month"
+    column: "current_dd_type_proforma"
+
+  - name: "activation_rate_d30"
+    display_name: "D30 Activation Rate"
+    definition: "% of enrolled members who made at least one qualifying transaction within 30 days."
+    column_name: "d30_active_rate"
+
+  - name: "activation_rate_m0"
+    display_name: "M0 Activation Rate"
+    definition: "% of enrolled members who made at least one qualifying transaction in enrollment month."
+    column_name: "m0_activation_rate"
+
+  - name: "purchase_volume"
+    display_name: "Purchase Volume (PV)"
+    definition: "Total dollar amount of purchases/spend on Chime debit and credit cards."
+    aliases: ["PV"]
+    filter: "is_purchase_transaction = TRUE"
+    table: "EDW_DB.CORE.FTR_TRANSACTION"
+
+  - name: "deposit_volume"
+    display_name: "Deposit Volume (DV)"
+    definition: "Total dollar amount of deposits into Chime accounts."
+    aliases: ["DV"]
+    filter: "acct_in_out = 'In'"
+    table: "EDW_DB.CORE.FTR_TRANSACTION"
+
+  - name: "cac"
+    display_name: "Customer Acquisition Cost (CAC)"
+    definition: "Marketing spend divided by new members acquired."
+    formula: "Marketing Spend / New Members"
+    aliases: ["CAC"]
+
+  - name: "cpe"
+    display_name: "Cost Per Enrollment (CPE)"
+    definition: "Marketing spend divided by enrollments."
+    formula: "Marketing Spend / Enrollments"
+    aliases: ["CPE"]
+
+  - name: "ltv"
+    display_name: "Lifetime Value (LTV)"
+    definition: "Total projected value a member will generate over their lifetime."
+    aliases: ["LTV"]
+    notes: "DD members have substantially higher LTV vs non-DD members."
+
+  - name: "contribution_margin"
+    display_name: "Contribution Margin (CM)"
+    definition: "Interchange revenue minus variable costs (transaction costs, losses)."
+    aliases: ["CM"]
+
+# Retention convention by tenure
+retention_conventions:
+  - tenure: "M1, M2"
+    metric: "Net Retention"
+    reason: "Cohort-based tracking — early tenure tracks performance vs original cohort size"
+  - tenure: "M2+, M3+"
+    metric: "Gross Retention"
+    reason: "Period-based — tracks month-over-month stability at later tenure"

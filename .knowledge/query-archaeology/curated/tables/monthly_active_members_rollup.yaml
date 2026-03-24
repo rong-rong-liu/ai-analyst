@@ -1,0 +1,12 @@
+table_name: "MONTHLY_ACTIVE_MEMBERS_ROLLUP"
+dataset: "snowflake-data"
+full_path: "EDW_DB.GROWTH.MONTHLY_ACTIVE_MEMBERS_ROLLUP"
+grain: "One row per MONTH_KEY (monthly aggregate)"
+description: "Monthly aggregate growth metrics, YoY/MoM comparisons, retention metrics by tenure, product adoption ratios, communication efficiency rates."
+primary_key: ["MONTH_KEY"]
+naming_conventions:
+  - "m0/m1/m2/m3 = months 0/1/2/3 since enrollment"
+  - "early_stage = M0 or 30 days (clarify with user)"
+  - "late_stage = after first month"
+  - "d30/d90/d180 = days 30/90/180"
+updated_at: "2026-03-17"

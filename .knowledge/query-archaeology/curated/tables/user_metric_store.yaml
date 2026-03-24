@@ -1,0 +1,13 @@
+table_name: "USER_METRIC_STORE"
+dataset: "snowflake-data"
+full_path: "EDW_DB.MEMBER.USER_METRIC_STORE"
+grain: "One row per DATE_KEY + USER_ID"
+description: "Daily KPIs and experiment metrics, tier and qualification over time, P2P analysis, SpotMe/MyPay metrics, referral tracking, communication engagement."
+primary_key: ["DATE_KEY", "USER_ID"]
+key_abbreviations:
+  - "pa = pay anyone"
+  - "pf = pay friend"
+  - "m2g = member to guest"
+  - "m2m = member to member"
+  - "l1/l7/l30 = in last 1/7/30 days"
+updated_at: "2026-03-17"

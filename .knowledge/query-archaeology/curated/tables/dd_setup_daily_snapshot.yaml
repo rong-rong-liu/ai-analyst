@@ -1,0 +1,7 @@
+table_name: "DD_SETUP_DAILY_SNAPSHOT"
+dataset: "snowflake-data"
+full_path: "EDW_DB.MEMBER.DD_SETUP_DAILY_SNAPSHOT"
+grain: "One row per CALENDAR_DATE + USER_ID"
+description: "DD setup funnel analysis, conversion optimization, understanding DD setup behavior and friction points."
+primary_key: ["CALENDAR_DATE", "USER_ID"]
+updated_at: "2026-03-17"

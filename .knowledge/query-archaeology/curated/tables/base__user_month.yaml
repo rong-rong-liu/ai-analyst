@@ -1,0 +1,52 @@
+table_name: "base__user_month"
+dataset: "snowflake-data"
+full_path: "analytics_db.dbt_cloud_prod.base__user_month"
+grain: "One row per USER_ID + calendar_month (monthly)"
+description: >
+  PRIMARY TABLE for monthly DDer/active counts, retention, and conversion analysis.
+  Use this as the default starting point for most member analytics questions.
+primary_key: ["USER_ID", "calendar_month"]
+
+key_columns:
+  - name: "is_current_dd"
+    description: "Current DDer flag (standard)"
+    notes: "Use is_current_dd_proforma for historical trend analysis"
+
+  - name: "is_current_dd_proforma"
+    description: "Current DDer flag using proforma definition — USE THIS for cohort/retention/YoY analysis"
+
+  - name: "current_dd_type"
+    description: "Lifecycle state: New, Retained, Churned, Winback"
+    notes: "Use current_dd_type_proforma for historical analysis"
+
+  - name: "current_dd_type_proforma"
+    description: "Lifecycle state with proforma definition"
+
+  - name: "months_since_enrollment"
+    description: "0-indexed months since enrollment (M0=0, M1=1, M2=2)"
+
+  - name: "months_since_conversion"
+    description: "0-indexed months since first DD conversion"
+    notes: "Use months_since_conversion_proforma for historical analysis"
+
+  - name: "months_since_conversion_proforma"
+    description: "Months since conversion using proforma definition"
+
+  - name: "calendar_month"
+    description: "Month of the record"
+
+proforma_rule: >
+  ALWAYS use proforma columns for historical trend analysis unless user specifies otherwise:
+  - is_current_dd_proforma (not is_current_dd)
+  - current_dd_type_proforma (not current_dd_type)
+  - months_since_conversion_proforma (not months_since_conversion)
+  When to use proforma: cohort analysis, retention trends, YoY comparisons.
+
+gotchas:
+  - "months_since_enrollment and months_since_conversion are 0-indexed (M0=0, M1=1)"
+  - "Use proforma columns for any historical/trend analysis (see proforma_rule)"
+  - "Daily grain alternative: base__user_day"
+
+related_tables:
+  - "base__user_day — same structure but daily grain"
+updated_at: "2026-03-17"

@@ -1,0 +1,15 @@
+table_name: "DIM_ACCOUNT"
+dataset: "snowflake-data"
+full_path: "EDW_DB.CORE.DIM_ACCOUNT"
+grain: "One row per account (latest snapshot only)"
+description: "Account-level data. WARNING: latest snapshot only — not a slowly changing dimension."
+primary_key: ["ACCOUNT_KEY"]
+gotchas:
+  - "CRITICAL: DATE_KEY reflects snapshot date but table ONLY holds most recent state — NOT an SCD with historical rows"
+  - "For true historical balance data use DIM_ACCOUNT_DAILY_BALANCE instead"
+  - "No declared relationship to fact tables — join manually on USER_ID with appropriate date filters"
+related_tables:
+  - "DIM_ACCOUNT_DAILY_BALANCE — periodic snapshot fact table with TRUE HISTORICAL ROWS"
+  - "DIM_ACCOUNT_HISTORY — daily snapshot history for account status"
+  - "CHIME.FINANCE.DAILY_ACCOUNT_BALANCES — daily balance snapshots"
+updated_at: "2026-03-17"

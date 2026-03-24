@@ -1,0 +1,10 @@
+organization: "Chime"
+is_example: false
+created_at: "2026-03-17"
+industry: "fintech / neobank"
+description: >
+  Chime is a mobile-first financial technology company providing banking services
+  to consumers without physical branches. Chime is not a bank itself — it partners
+  with The Bancorp Bank and Stride Bank (FDIC-insured) to provide deposit accounts.
+  All services are delivered through the mobile app and website.
+schema_version: 1
