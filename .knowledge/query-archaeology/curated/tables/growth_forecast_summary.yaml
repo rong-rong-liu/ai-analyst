@@ -1,0 +1,108 @@
+# Table: analytics_db.dbt_cloud_prod.growth_forecast_summary
+# Purpose: Official scenario goals / forecast values for GA metrics
+# Grain: one row per month + forecast_id + dataset_type
+
+table: "analytics_db.dbt_cloud_prod.growth_forecast_summary"
+database: "analytics_db"
+schema: "dbt_cloud_prod"
+grain: "month + forecast_id + dataset_type"
+
+# Always filter by BOTH forecast_id AND dataset_type = 'scenario'
+required_filters:
+  - "forecast_id = <id>"
+  - "dataset_type = 'scenario'"
+
+forecast_ids:
+  ta:
+    id: 1768336378
+    label: "1.6M NNA scenario — use for TA goals"
+  dd:
+    id: 1769121646
+    label: "DD scenario — use for all DD-related goals (new, resurrection, early, late, retained)"
+
+key_columns:
+  dimensions:
+    - name: month
+      type: DATE
+      notes: "Use TO_CHAR(month, 'YYYY-MM') to avoid JSON serialization errors in MCP"
+    - name: forecast_id
+      type: NUMBER
+    - name: dataset_type
+      type: TEXT
+      notes: "Filter to 'scenario' for official goals"
+    - name: year
+      type: NUMBER
+    - name: quarter_year
+      type: TEXT
+
+  ta_metrics:
+    - name: actives
+      description: "Transaction Actives goal"
+    - name: new_actives
+      description: "New TAs in month"
+    - name: reactive_actives
+      description: "Resurrected TAs"
+    - name: retained_actives
+      description: "Retained TAs"
+    - name: retention_rate_actives
+      description: "TA gross retention rate"
+
+  dd_metrics:
+    - name: new_dders
+      description: "Gross New DDer goal"
+    - name: d30_in_month_conversions
+      description: "Early DD (D30-in-month) goal — use this for Early Stage DD goal, NOT early_dders"
+    - name: d30_plus_in_month_conversions
+      description: "Late DD (D30+) goal — use this for Late Stage DD goal, NOT late_dders"
+    - name: reactive_current_dders
+      description: "Resurrected DDer goal (use for resurrection count)"
+    - name: retained_current_dders
+      description: "Retained Current DDers"
+    - name: current_dders
+      description: "Total Current DDers (stock)"
+    - name: retention_rate_current_dd
+      description: "DD gross retention rate — used as M2 DD retention proxy in forecast model"
+    - name: current_dders_resurrection_rate
+      description: "DD resurrection rate — NaN for March 2026 (no goal set)"
+    - name: m2_dd_cvr
+      description: "M2 DD conversion rate (NOT the same as M2 DD retention)"
+    - name: d30_cvr
+      description: "D30 DD conversion rate"
+    - name: early_dders_m0_m1
+      description: "Early DDers in M0+M1 combined"
+    - name: d30_dders_paid
+      description: "D30 DDers from Paid channel"
+    - name: d30_dders_organic
+      description: "D30 DDers from Organic channel"
+    - name: d30_dders_referral
+      description: "D30 DDers from Referral channel"
+    - name: d30_dders_p2p
+      description: "D30 DDers from P2P / Pay Anyone channel"
+
+known_issues:
+  - "current_dders_resurrection_rate = NaN for March 2026 — no resurrection rate goal available"
+  - "No deposit volume (DV) column — Early DD/DV goal cannot be derived from this table"
+  - "Use TO_CHAR(month, 'YYYY-MM') or YEAR()/MONTH() filters to avoid date serialization errors"
+
+example_queries:
+  ta_march_2026: |
+    SELECT TO_CHAR(month, 'YYYY-MM') AS month, actives
+    FROM analytics_db.dbt_cloud_prod.growth_forecast_summary
+    WHERE forecast_id = 1768336378
+      AND dataset_type = 'scenario'
+      AND MONTH(month) = 3 AND YEAR(month) = 2026;
+
+  dd_march_2026: |
+    SELECT TO_CHAR(month, 'YYYY-MM') AS month,
+           new_dders,
+           d30_in_month_conversions AS early_dders,
+           d30_plus_in_month_conversions AS late_dders,
+           reactive_current_dders AS resurrected_dders,
+           retained_current_dders, current_dders,
+           retention_rate_current_dd,
+           current_dders_resurrection_rate,
+           m2_dd_cvr
+    FROM analytics_db.dbt_cloud_prod.growth_forecast_summary
+    WHERE forecast_id = 1769121646
+      AND dataset_type = 'scenario'
+      AND MONTH(month) = 3 AND YEAR(month) = 2026;

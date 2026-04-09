@@ -113,6 +113,9 @@ metrics:
     caveats:
       - "Cohort = conversion month"
       - "Still DD = qualified DD in M+2"
+    goals_source: "Hardcoded planning targets — see m2_dd_retention_goals_2026 in section 5c"
+    goal_march_2026: 0.678
+    goal_note: "March 2026 goal (67.8%) measures the Jan 2026 conversion cohort"
 
   - name: "early_dd_dv"
     display_name: "Early DD/DV (Deposit Volume per Current DD)"
@@ -145,6 +148,511 @@ data_sources:
     notes: "Prefer over test tables"
   - reference: "chime-tf/environments/snowflake-prod/views_sql_script"
     notes: "Table/docs reference for GA-relevant views"
+
+# -----------------------------------------------------------------------
+# 5b. Goals / Forecast Table
+# -----------------------------------------------------------------------
+goals_table:
+  table: "analytics_db.dbt_cloud_prod.growth_forecast_summary"
+  notes: >
+    Use this table to pull official scenario goals for GA metrics.
+    Filter by forecast_id AND dataset_type = 'scenario'.
+    Key columns: month (DATE), plus metric-specific columns below.
+
+  forecast_ids:
+    ta:
+      forecast_id: 1768336378
+      label: "1.6M NNA scenario"
+      dataset_type: "scenario"
+      key_columns:
+        actives: "Transaction Actives (TA) goal — use for Q1 TA goal (March)"
+
+    dd:
+      forecast_id: 1769121646
+      label: "DD scenario"
+      dataset_type: "scenario"
+      key_columns:
+        new_dders: "Gross New DDer goal"
+        d30_in_month_conversions: "Early DD (D30-in-month) goal — correct column for Early Stage DD"
+        d30_plus_in_month_conversions: "Late DD (D30+) goal — correct column for Late Stage DD"
+        reactive_current_dders: "Resurrected DDer goal"
+        retained_current_dders: "Retained Current DDers goal"
+        current_dders: "Total Current DDers goal"
+        retention_rate_current_dd: "DD gross retention rate goal (proxy for M2 DD retention in forecast model)"
+        current_dders_resurrection_rate: "DD resurrection rate goal — NOTE: NaN in March 2026, no goal set"
+        m2_dd_cvr: "M2 DD conversion rate goal (distinct from M2 DD retention)"
+
+  example_query: |
+    -- TA goal for a given month
+    SELECT TO_CHAR(month, 'YYYY-MM') AS month, actives
+    FROM analytics_db.dbt_cloud_prod.growth_forecast_summary
+    WHERE forecast_id = 1768336378
+      AND dataset_type = 'scenario'
+    ORDER BY 1;
+
+    -- DD goals for a given month
+    SELECT TO_CHAR(month, 'YYYY-MM') AS month,
+           new_dders,
+           d30_in_month_conversions AS early_dders,
+           d30_plus_in_month_conversions AS late_dders,
+           reactive_current_dders AS resurrected_dders,
+           retained_current_dders, current_dders,
+           retention_rate_current_dd, current_dders_resurrection_rate, m2_dd_cvr
+    FROM analytics_db.dbt_cloud_prod.growth_forecast_summary
+    WHERE forecast_id = 1769121646
+      AND dataset_type = 'scenario'
+    ORDER BY 1;
+
+  goals_march_2026:
+    ta:
+      actives: 10161011
+    dd:
+      new_dders: 166643
+      d30_in_month_conversions: 59773   # Early Stage DD
+      d30_plus_in_month_conversions: 106870   # Late Stage DD
+      resurrected_dders: 285368
+      retained_current_dders: 4222964
+      current_dders: 4674975
+      retention_rate_current_dd: 0.9150
+      current_dders_resurrection_rate: null  # NaN — no goal set
+      m2_dd_cvr: 0.02338
+
+  metrics_without_goals:
+    - metric: "DD Resurrection Rate"
+      reason: "current_dders_resurrection_rate = NaN in the forecast table for March 2026"
+    - metric: "Early DD/DV (deposit volume per current DD)"
+      reason: "No deposit volume column in growth_forecast_summary; no DV goal in the forecast model"
+
+# -----------------------------------------------------------------------
+# 5c-2. Quarterly Pacing Logic (Gross New DD, Resurrected DD, Early/Late DD)
+# -----------------------------------------------------------------------
+quarterly_pacing_logic:
+  description: >
+    Standard framework for computing quarterly projections for DD metrics.
+    Priority order for each month:
+      1. ACTUAL  — month is fully closed (< current calendar month start)
+      2. MTD PACING — current calendar month is in progress; project end-of-month
+         from MTD actuals using: MTD_count / days_with_data * days_in_month
+      3. FORECAST — future months (no actuals yet); use pacing forecast
+
+  pacing_forecast_id_source: |
+    -- Always look up the live pacing forecast_id dynamically:
+    SELECT forecast_id
+    FROM analytics_db.dbt_cloud_prod.ddforecast_version_log
+    WHERE pigment_indicator = 1;
+    -- As of 2026-04-09: returns 1775607317
+
+  plan_forecast_id: 1769121646
+  plan_forecast_notes: >
+    forecast_id 1769121646 (dataset_type = 'scenario') is the official planning/goal scenario.
+    Use for "vs Plan" comparisons. The pacing forecast (pigment_indicator = 1) is the
+    live updated forecast and should be used for projection of future months.
+
+  metrics:
+
+    gross_new_dd:
+      display_name: "Gross New DD"
+      closed_months:
+        table: "analytics_db.dbt_cloud_prod.base__user_month"
+        filter: "current_dd_type_proforma = 'New'"
+        agg: "COUNT(*)"
+        notes: "One row per user per month; proforma flag is required."
+      mtd_current_month:
+        table: "edw_db.core.member_details"
+        filter: >
+          DATE_TRUNC('month', first_dd_dt) = DATE_TRUNC('month', CURRENT_DATE)
+          AND first_dd_amount >= 200
+        agg: "COUNT(*)"
+        projection: "MTD_count / days_with_data * days_in_month"
+        notes: >
+          first_dd_dt has ~2-day lag. Use MAX(first_dd_dt) to determine actual days_with_data
+          (not CURRENT_DATE). first_dd_amount >= 200 enforces qualified DD threshold.
+        sql_snippet: |
+          SELECT
+              COUNT(*) AS mtd_gross_new_dd,
+              TO_CHAR(MAX(first_dd_dt), 'YYYY-MM-DD') AS last_data_date,
+              DATEDIFF('day', DATE_TRUNC('month', CURRENT_DATE), MAX(first_dd_dt)) + 1 AS days_with_data,
+              DAY(LAST_DAY(CURRENT_DATE)) AS days_in_month,
+              COUNT(*) / NULLIF(DATEDIFF('day', DATE_TRUNC('month', CURRENT_DATE), MAX(first_dd_dt)) + 1, 0)
+                  * DAY(LAST_DAY(CURRENT_DATE)) AS projected_full_month
+          FROM edw_db.core.member_details
+          WHERE DATE_TRUNC('month', first_dd_dt) = DATE_TRUNC('month', CURRENT_DATE)
+            AND first_dd_amount >= 200;
+      future_months:
+        table: "analytics_db.dbt_cloud_prod.growth_forecast_summary"
+        forecast_id: "(SELECT forecast_id FROM analytics_db.dbt_cloud_prod.ddforecast_version_log WHERE pigment_indicator = 1)"
+        column: "new_dders"
+        filter: "dataset_type = 'scenario'"
+
+    resurrected_dd:
+      display_name: "Resurrected DD"
+      closed_months:
+        table: "analytics_db.dbt_cloud_prod.base__user_month"
+        filter: "current_dd_type_proforma = 'Winback'"
+        agg: "COUNT(*)"
+        notes: "'Winback' lifecycle state = resurrected DDer in proforma definition."
+      mtd_current_month:
+        table: "edw_db.core.member_details"
+        filter: >
+          DATE_TRUNC('month', last_qualifying_dd_ts) = DATE_TRUNC('month', CURRENT_DATE)
+          AND DATE_TRUNC('month', first_dd_dt) < DATE_TRUNC('month', CURRENT_DATE)
+          AND first_dd_dt IS NOT NULL
+        agg: "COUNT(*)"
+        projection: "MTD_count / days_with_data * days_in_month"
+        notes: >
+          APPROXIMATION — member_details is a snapshot and does not capture whether the
+          member was actively DD in the prior calendar month. This filter captures
+          ever-DDers (first_dd_dt before current month) who received a qualifying DD
+          this month (last_qualifying_dd_ts in current month). It will slightly over-count
+          by including continuously-active DDers whose most recent qualifying DD happens
+          to fall in the current month. Treat as a directional MTD pacing signal only.
+          For precise resurrection numbers, use base__user_month once the month closes.
+        sql_snippet: |
+          SELECT
+              COUNT(*) AS mtd_resurrected_dd_approx,
+              TO_CHAR(MAX(last_qualifying_dd_ts), 'YYYY-MM-DD') AS last_data_date,
+              DATEDIFF('day', DATE_TRUNC('month', CURRENT_DATE),
+                  DATE_TRUNC('day', MAX(last_qualifying_dd_ts))) + 1 AS days_with_data,
+              DAY(LAST_DAY(CURRENT_DATE)) AS days_in_month,
+              COUNT(*) / NULLIF(DATEDIFF('day', DATE_TRUNC('month', CURRENT_DATE),
+                  DATE_TRUNC('day', MAX(last_qualifying_dd_ts))) + 1, 0)
+                  * DAY(LAST_DAY(CURRENT_DATE)) AS projected_full_month
+          FROM edw_db.core.member_details
+          WHERE DATE_TRUNC('month', last_qualifying_dd_ts) = DATE_TRUNC('month', CURRENT_DATE)
+            AND DATE_TRUNC('month', first_dd_dt) < DATE_TRUNC('month', CURRENT_DATE)
+            AND first_dd_dt IS NOT NULL;
+      future_months:
+        table: "analytics_db.dbt_cloud_prod.growth_forecast_summary"
+        forecast_id: "(SELECT forecast_id FROM analytics_db.dbt_cloud_prod.ddforecast_version_log WHERE pigment_indicator = 1)"
+        column: "reactive_current_dders"
+        filter: "dataset_type = 'scenario'"
+
+    gross_new_plus_resurrected:
+      display_name: "Gross New + Resurrected DD (Consumer Channel DDer)"
+      closed_months:
+        derived_from: "gross_new_dd.actual + resurrected_dd.actual"
+        table: "analytics_db.dbt_cloud_prod.base__user_month"
+        filter: "current_dd_type_proforma IN ('New', 'Winback')"
+        agg: "COUNT(*)"
+      mtd_current_month:
+        derived_from: "gross_new_dd.mtd_projection + resurrected_dd.mtd_projection"
+        notes: "Sum the two MTD projections independently. Inherit caveats from resurrected_dd."
+      future_months:
+        derived_from: "new_dders + reactive_current_dders from growth_forecast_summary"
+        forecast_id: "(SELECT forecast_id FROM analytics_db.dbt_cloud_prod.ddforecast_version_log WHERE pigment_indicator = 1)"
+        columns: ["new_dders", "reactive_current_dders"]
+        filter: "dataset_type = 'scenario'"
+
+    early_stage_dd:
+      display_name: "Early Stage DD (D30 DDer)"
+      closed_months:
+        table: "edw_db.core.member_details"
+        filter: >
+          DATE_TRUNC('month', first_dd_dt) = <closed_month>
+          AND enrollment_date IS NOT NULL
+          AND first_dd_dt IS NOT NULL
+          AND DATEDIFF('day', enrollment_date, first_dd_dt) <= 30
+          AND dateadd('day', 30, date_trunc('month', first_dd_dt)) < CURRENT_DATE()
+        agg: "COUNT(*)"
+        notes: >
+          D30 maturity gate: only include months where the full 30-day window has closed
+          (i.e., 30 days after the conversion month start < today). This means the most
+          recent mature month is typically 1–2 months prior.
+          Uses member_details (not base__user_month) because early/late split requires
+          datediff(enrollment_date, first_dd_dt).
+        sql_snippet: |
+          SELECT
+              TO_CHAR(DATE_TRUNC('month', first_dd_dt), 'YYYY-MM') AS month,
+              COUNT(CASE WHEN DATEDIFF('day', enrollment_date, first_dd_dt) <= 30 THEN 1 END) AS early_dd,
+              COUNT(CASE WHEN DATEDIFF('day', enrollment_date, first_dd_dt) > 30  THEN 1 END) AS late_dd
+          FROM edw_db.core.member_details
+          WHERE first_dd_dt IS NOT NULL
+            AND enrollment_date IS NOT NULL
+            AND DATEADD('day', 30, DATE_TRUNC('month', first_dd_dt)) < CURRENT_DATE()
+          GROUP BY 1 ORDER BY 1;
+      mtd_current_month:
+        table: "edw_db.core.member_details"
+        filter: >
+          DATE_TRUNC('month', first_dd_dt) = DATE_TRUNC('month', CURRENT_DATE)
+          AND enrollment_date IS NOT NULL
+          AND first_dd_dt IS NOT NULL
+          AND DATEDIFF('day', enrollment_date, first_dd_dt) <= 30
+          AND first_dd_amount >= 200
+        agg: "COUNT(*)"
+        projection: "MTD_count / days_with_data * days_in_month"
+        notes: >
+          D30 maturity is NOT enforced for the current month (by definition, no member
+          enrolled after April 1 can have a 30-day window closed yet — but members who
+          enrolled in March and converted in April within 30 days do count).
+          Use MAX(first_dd_dt) for days_with_data due to ~2-day lag.
+        sql_snippet: |
+          SELECT
+              COUNT(*) AS mtd_early_dd,
+              TO_CHAR(MAX(first_dd_dt), 'YYYY-MM-DD') AS last_data_date,
+              DATEDIFF('day', DATE_TRUNC('month', CURRENT_DATE), MAX(first_dd_dt)) + 1 AS days_with_data,
+              DAY(LAST_DAY(CURRENT_DATE)) AS days_in_month,
+              COUNT(*) / NULLIF(DATEDIFF('day', DATE_TRUNC('month', CURRENT_DATE), MAX(first_dd_dt)) + 1, 0)
+                  * DAY(LAST_DAY(CURRENT_DATE)) AS projected_full_month
+          FROM edw_db.core.member_details
+          WHERE DATE_TRUNC('month', first_dd_dt) = DATE_TRUNC('month', CURRENT_DATE)
+            AND enrollment_date IS NOT NULL
+            AND first_dd_dt IS NOT NULL
+            AND DATEDIFF('day', enrollment_date, first_dd_dt) <= 30
+            AND first_dd_amount >= 200;
+      future_months:
+        table: "analytics_db.dbt_cloud_prod.growth_forecast_summary"
+        forecast_id: "(SELECT forecast_id FROM analytics_db.dbt_cloud_prod.ddforecast_version_log WHERE pigment_indicator = 1)"
+        column: "d30_in_month_conversions"
+        filter: "dataset_type = 'scenario'"
+
+    late_stage_dd:
+      display_name: "Late Stage DD (D30+ DDer)"
+      closed_months:
+        table: "edw_db.core.member_details"
+        filter: >
+          DATE_TRUNC('month', first_dd_dt) = <closed_month>
+          AND enrollment_date IS NOT NULL
+          AND first_dd_dt IS NOT NULL
+          AND DATEDIFF('day', enrollment_date, first_dd_dt) > 30
+          AND dateadd('day', 30, date_trunc('month', first_dd_dt)) < CURRENT_DATE()
+        agg: "COUNT(*)"
+        notes: >
+          Same maturity gate as early_stage_dd for consistency in split calculation.
+          gross_new_dd = early_stage_dd + late_stage_dd within the mature window.
+      mtd_current_month:
+        table: "edw_db.core.member_details"
+        filter: >
+          DATE_TRUNC('month', first_dd_dt) = DATE_TRUNC('month', CURRENT_DATE)
+          AND enrollment_date IS NOT NULL
+          AND first_dd_dt IS NOT NULL
+          AND DATEDIFF('day', enrollment_date, first_dd_dt) > 30
+          AND first_dd_amount >= 200
+        agg: "COUNT(*)"
+        projection: "MTD_count / days_with_data * days_in_month"
+        notes: "Same source and lag handling as early_stage_dd. These two always sum to gross_new_dd MTD."
+        sql_snippet: |
+          SELECT
+              COUNT(*) AS mtd_late_dd,
+              TO_CHAR(MAX(first_dd_dt), 'YYYY-MM-DD') AS last_data_date,
+              DATEDIFF('day', DATE_TRUNC('month', CURRENT_DATE), MAX(first_dd_dt)) + 1 AS days_with_data,
+              DAY(LAST_DAY(CURRENT_DATE)) AS days_in_month,
+              COUNT(*) / NULLIF(DATEDIFF('day', DATE_TRUNC('month', CURRENT_DATE), MAX(first_dd_dt)) + 1, 0)
+                  * DAY(LAST_DAY(CURRENT_DATE)) AS projected_full_month
+          FROM edw_db.core.member_details
+          WHERE DATE_TRUNC('month', first_dd_dt) = DATE_TRUNC('month', CURRENT_DATE)
+            AND enrollment_date IS NOT NULL
+            AND first_dd_dt IS NOT NULL
+            AND DATEDIFF('day', enrollment_date, first_dd_dt) > 30
+            AND first_dd_amount >= 200;
+      future_months:
+        table: "analytics_db.dbt_cloud_prod.growth_forecast_summary"
+        forecast_id: "(SELECT forecast_id FROM analytics_db.dbt_cloud_prod.ddforecast_version_log WHERE pigment_indicator = 1)"
+        column: "d30_plus_in_month_conversions"
+        filter: "dataset_type = 'scenario'"
+
+  combined_quarterly_projection_template: |
+    -- ─────────────────────────────────────────────────────────────────────────
+    -- Quarterly projection: gross_new_dd + resurrected_dd + early/late split
+    -- Substitute <METRIC> column and <QUARTER_START> / <QUARTER_END> as needed
+    -- ─────────────────────────────────────────────────────────────────────────
+    WITH pacing_forecast_id AS (
+        SELECT forecast_id
+        FROM analytics_db.dbt_cloud_prod.ddforecast_version_log
+        WHERE pigment_indicator = 1
+    ),
+    -- Step 1: closed months (actuals)
+    closed_actuals AS (
+        SELECT
+            calendar_month AS month,
+            COUNT(CASE WHEN current_dd_type_proforma = 'New'     THEN 1 END) AS gross_new_dd,
+            COUNT(CASE WHEN current_dd_type_proforma = 'Winback' THEN 1 END) AS resurrected_dd
+        FROM analytics_db.dbt_cloud_prod.base__user_month
+        WHERE calendar_month >= '<QUARTER_START>'
+          AND calendar_month < DATE_TRUNC('month', CURRENT_DATE)
+        GROUP BY 1
+    ),
+    -- Step 2: current month MTD projection (gross new only; resurrection is approximate)
+    mtd_new_dd AS (
+        SELECT
+            DATE_TRUNC('month', CURRENT_DATE) AS month,
+            COUNT(*) AS mtd_count,
+            DATEDIFF('day', DATE_TRUNC('month', CURRENT_DATE), MAX(first_dd_dt)) + 1 AS days_data,
+            DAY(LAST_DAY(CURRENT_DATE)) AS days_month
+        FROM edw_db.core.member_details
+        WHERE DATE_TRUNC('month', first_dd_dt) = DATE_TRUNC('month', CURRENT_DATE)
+          AND first_dd_amount >= 200
+    ),
+    mtd_resurrected_dd AS (
+        SELECT
+            DATE_TRUNC('month', CURRENT_DATE) AS month,
+            COUNT(*) AS mtd_count,
+            DATEDIFF('day', DATE_TRUNC('month', CURRENT_DATE),
+                DATE_TRUNC('day', MAX(last_qualifying_dd_ts))) + 1 AS days_data,
+            DAY(LAST_DAY(CURRENT_DATE)) AS days_month
+        FROM edw_db.core.member_details
+        WHERE DATE_TRUNC('month', last_qualifying_dd_ts) = DATE_TRUNC('month', CURRENT_DATE)
+          AND DATE_TRUNC('month', first_dd_dt) < DATE_TRUNC('month', CURRENT_DATE)
+          AND first_dd_dt IS NOT NULL
+    ),
+    -- Step 3: future months from pacing forecast
+    future_forecast AS (
+        SELECT
+            DATE_TRUNC('month', f.month)::DATE AS month,
+            f.new_dders AS gross_new_dd,
+            f.reactive_current_dders AS resurrected_dd,
+            f.d30_in_month_conversions AS early_dd,
+            f.d30_plus_in_month_conversions AS late_dd
+        FROM analytics_db.dbt_cloud_prod.growth_forecast_summary f
+        CROSS JOIN pacing_forecast_id p
+        WHERE f.forecast_id = p.forecast_id
+          AND f.dataset_type = 'scenario'
+          AND f.month > DATE_TRUNC('month', CURRENT_DATE)
+          AND f.month <= '<QUARTER_END>'
+    )
+    -- Assemble
+    SELECT
+        TO_CHAR(month, 'YYYY-MM') AS month,
+        gross_new_dd,
+        resurrected_dd,
+        gross_new_dd + resurrected_dd AS total_dder,
+        'actual' AS source
+    FROM closed_actuals
+    UNION ALL
+    SELECT
+        TO_CHAR(n.month, 'YYYY-MM'),
+        ROUND(n.mtd_count / NULLIF(n.days_data, 0) * n.days_month) AS gross_new_dd,
+        ROUND(r.mtd_count / NULLIF(r.days_data, 0) * r.days_month) AS resurrected_dd,
+        ROUND(n.mtd_count / NULLIF(n.days_data, 0) * n.days_month)
+            + ROUND(r.mtd_count / NULLIF(r.days_data, 0) * r.days_month) AS total_dder,
+        'mtd_pacing' AS source
+    FROM mtd_new_dd n JOIN mtd_resurrected_dd r ON n.month = r.month
+    UNION ALL
+    SELECT
+        TO_CHAR(month, 'YYYY-MM'),
+        gross_new_dd,
+        resurrected_dd,
+        gross_new_dd + resurrected_dd AS total_dder,
+        'pacing_forecast' AS source
+    FROM future_forecast
+    ORDER BY 1;
+
+# -----------------------------------------------------------------------
+# 5d. Early Stage DD Goals by Channel (hardcoded, 2026)
+# -----------------------------------------------------------------------
+early_dd_channel_goals_2026:
+  notes: >
+    Hardcoded planning targets for Early Stage DD (D30_IN_MONTH_CONVERSIONS) by enrollment channel.
+    Channel mapping: Paid = Paid Debit + Paid Credit combined; Organic; Referral; Pay Anyone (PA).
+    "Others" channel has no explicit goal set.
+    Source: hardcoded planning targets, not from growth_forecast_summary.
+  goals:
+    - month: "2026-01"
+      paid: 23892
+      organic: 8575
+      referral: 26246
+      pay_anyone: 852
+    - month: "2026-02"
+      paid: 23550
+      organic: 8362
+      referral: 24541
+      pay_anyone: 1132
+    - month: "2026-03"
+      paid: 22280
+      organic: 8230
+      referral: 24688
+      pay_anyone: 1125
+    - month: "2026-04"
+      paid: 25412
+      organic: 8302
+      referral: 24075
+      pay_anyone: 932
+    - month: "2026-05"
+      paid: 25721
+      organic: 8641
+      referral: 29590
+      pay_anyone: 680
+    - month: "2026-06"
+      paid: 26485
+      organic: 9677
+      referral: 33498
+      pay_anyone: 598
+    - month: "2026-07"
+      paid: 27218
+      organic: 10720
+      referral: 34664
+      pay_anyone: 554
+    - month: "2026-08"
+      paid: 30015
+      organic: 11219
+      referral: 39717
+      pay_anyone: 594
+    - month: "2026-09"
+      paid: 33250
+      organic: 10987
+      referral: 38460
+      pay_anyone: 614
+    - month: "2026-10"
+      paid: 33873
+      organic: 11097
+      referral: 38622
+      pay_anyone: 725
+    - month: "2026-11"
+      paid: 30457
+      organic: 10935
+      referral: 39043
+      pay_anyone: 819
+    - month: "2026-12"
+      paid: 23801
+      organic: 10058
+      referral: 35205
+      pay_anyone: 702
+
+# -----------------------------------------------------------------------
+# 5c. M2 DD Retention Goals (hardcoded, 2026)
+# -----------------------------------------------------------------------
+m2_dd_retention_goals_2026:
+  notes: >
+    Reporting-month anchored. The goal for a given reporting month applies to the
+    conversion cohort two months prior (M-2). E.g. Feb 2026 goal (64.4%) measures
+    the Dec 2025 conversion cohort still DD in Feb 2026.
+    Source: hardcoded planning targets, not from growth_forecast_summary.
+  goals:
+    - reporting_month: "2026-01"
+      conversion_cohort: "2025-11"
+      m2_retention_goal: 0.663
+    - reporting_month: "2026-02"
+      conversion_cohort: "2025-12"
+      m2_retention_goal: 0.644
+    - reporting_month: "2026-03"
+      conversion_cohort: "2026-01"
+      m2_retention_goal: 0.678
+    - reporting_month: "2026-04"
+      conversion_cohort: "2026-02"
+      m2_retention_goal: 0.679
+    - reporting_month: "2026-05"
+      conversion_cohort: "2026-03"
+      m2_retention_goal: 0.671
+    - reporting_month: "2026-06"
+      conversion_cohort: "2026-04"
+      m2_retention_goal: 0.674
+    - reporting_month: "2026-07"
+      conversion_cohort: "2026-05"
+      m2_retention_goal: 0.675
+    - reporting_month: "2026-08"
+      conversion_cohort: "2026-06"
+      m2_retention_goal: 0.668
+    - reporting_month: "2026-09"
+      conversion_cohort: "2026-07"
+      m2_retention_goal: 0.657
+    - reporting_month: "2026-10"
+      conversion_cohort: "2026-08"
+      m2_retention_goal: 0.651
+    - reporting_month: "2026-11"
+      conversion_cohort: "2026-09"
+      m2_retention_goal: 0.666
+    - reporting_month: "2026-12"
+      conversion_cohort: "2026-10"
+      m2_retention_goal: 0.680
 
 # -----------------------------------------------------------------------
 # 6. GA Glossary

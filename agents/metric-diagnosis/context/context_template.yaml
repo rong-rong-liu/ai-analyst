@@ -20,7 +20,7 @@ thresholds:
   late_dd_pct:           10
   resurrected_dd_pct:    10
   m2_retention_pp:        1.5   # Absolute pp MoM change to flag
-  early_dv_pct:           5
+  early_dv_pct:           3
   channel_share_pp:       5     # pp shift in any channel share to flag
   ta_pct:                 5     # % QoQ change to flag
 
@@ -104,8 +104,33 @@ metrics:
 
   early_dv:
     historical_notes:
-      # Example: "Jan cohort (feeds Feb early DV) typically higher DV due to year-start payroll"
-      - ""
+      - >
+        TAX SEASON SEASONALITY (Feb–Apr cohorts): Tax refunds are a key DV driver for
+        Chime members in Q1. Members in the Feb and Mar conversion cohorts often receive
+        a tax refund within their 35-day DV window, boosting both non-payroll DD DV and
+        non-DD DV. The Feb cohort (35-day window: Feb 1 – early Apr) is the most exposed
+        to tax refund timing. YoY comparisons during this window must account for whether
+        the tax season calendar composition is similar (e.g. IRS filing deadline, refund
+        processing speed). A later tax season = fewer refunds landing in the 35-day window.
+      - >
+        TURBOTAX CLASSIFICATION CHANGES — Critical for non-payroll DD DV interpretation:
+        TurboTax is a major tax refund source for Chime members. Its dd_proforma_type
+        classification has changed multiple times, affecting the paytype breakdown of DV.
+        The mapping from raw ACH company names to standardized labels lives in a
+        separate lookup table (company_name_new / dd_proforma_type_new) — these columns
+        DO NOT exist on ftr_transaction. The raw company_name in ftr_transaction is
+        frequently NULL for tax refund transactions; do NOT use company_name ILIKE filters
+        to identify TurboTax volume. Use dd_proforma_type = 'tax_refund' instead.
+        Classification history (from the standardized mapping table):
+          - "the turbotax set": 'unknown'→'transfer' from 2022-09-01
+          - "intuit turbotax": 'unknown'→'unknown' (unchanged)
+          - "turbotax": 'unknown'→'tax_refund' from 2024-11-15 and 2025-02-05
+        IMPLICATION: Non-payroll DD DV/DD comparisons across years involving tax season
+        are not straightforwardly apples-to-apples because the classification rules
+        changed. Always use dd_proforma_type (not company_name) for paytype analysis.
+      - >
+        Jan cohort (feeds Feb early DV): typically higher DV due to year-start payroll
+        (first full-month paycheck cycle) and deferred December holiday spending recouping.
     product_launches:
       - ""
     experiments:
@@ -113,12 +138,20 @@ metrics:
     policy_changes:
       - ""
     known_data_issues:
-      - ""
+      - >
+        Non-payroll DD DV comparisons across years in Q1 are affected by TurboTax
+        classification changes (see historical_notes). Before attributing a YoY drop
+        in non-payroll DD DV/DD to behavioral causes, verify whether the classification
+        shift moves volume between the 'unknown', 'transfer', and 'tax_refund' buckets.
 
   ta:
     historical_notes:
-      # Example: "Q1 always elevated due to tax refund season"
-      - ""
+      - >
+        TAX SEASON (Q1, Feb–Apr): Tax refunds drive meaningfully higher transaction
+        activity in Q1. Chime members who receive refunds tend to spend more in the weeks
+        after receipt, boosting TA counts. Q1 TA (March goal month) typically benefits
+        from this effect. YoY TA comparisons in Q1 should note whether the refund
+        calendar is similar.
     product_launches:
       - ""
     experiments:

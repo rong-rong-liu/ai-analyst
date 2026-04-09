@@ -91,7 +91,17 @@ Extract `METRIC`, `REPORTING_MONTH`, and `PRIOR_MONTH` from the user's message.
 - State clearly: "Diagnosing **{metric display name}** for **{REPORTING_MONTH}**
   vs **{PRIOR_MONTH}**."
 
-### Step 2: Fetch — Current, Prior, and YoY Data
+### SQL Disclosure Rule (applies to every step)
+
+**Always show the full SQL query in the chat conversation whenever a query is run.**
+Display it in a fenced code block (` ```sql `) immediately before or after presenting the
+results — never omit it from the conversation, even if it is also included in the final
+HTML report. This applies to every query in Steps 2–4 and any ad-hoc follow-up queries.
+The HTML report separately embeds all queries in collapsible `<details>` blocks per the
+`html-metrics-sql-disclosure.mdc` rule, but the conversation display is required in
+addition to — not instead of — the HTML disclosure.
+
+### Step 2: Fetch — Current, Prior, YoY, and Goal Data
 
 Using the Snowflake MCP tool, run **three queries in parallel** for the metric
 (see `reference.md`, section matching the metric key):
@@ -100,21 +110,38 @@ Using the Snowflake MCP tool, run **three queries in parallel** for the metric
 2. **YoY summary query** — same reporting month one year prior
    (`YOY_MONTH = DATEADD('year', -1, REPORTING_MONTH)`) and the period before that
    (`YOY_PRIOR_MONTH = DATEADD('year', -1, PRIOR_MONTH)`)
+3. **Goal lookup** — pull the goal for `{REPORTING_MONTH}` from
+   `analytics_db.dbt_cloud_prod.growth_forecast_summary` (see knowledge base for
+   forecast IDs) **or** from hardcoded targets in the knowledge base (e.g. M2 DD
+   retention goals). See `growth_analytics.yaml` section 5b/5c for all goal sources.
 
-Present results in a single consolidated table:
+**Goal column mapping by metric:**
+| Metric | Goal source | Column / field |
+|---|---|---|
+| `ta` | forecast_id = 1768336378, dataset_type = 'scenario' | `actives` |
+| `gross_new_dd` | forecast_id = 1769121646, dataset_type = 'scenario' | `new_dders` |
+| `early_dd` | forecast_id = 1769121646, dataset_type = 'scenario' | `early_dders` |
+| `late_dd` | forecast_id = 1769121646, dataset_type = 'scenario' | `late_dders` |
+| `resurrected_dd` | forecast_id = 1769121646, dataset_type = 'scenario' | `reactive_current_dders` |
+| `m2_retention` | hardcoded in knowledge base (growth_analytics.yaml §5c) | `m2_dd_retention_goals_2026` |
+| `early_dv` | no goal available | — |
+
+Present results in a single consolidated **scorecard table** that always includes the goal
+column when a goal is available. If no goal exists for the metric, omit the goal columns
+and note "No goal available for this metric":
+
 ```
-| Period              | [Key metric]  | MoM Δ    | MoM Δ%  | YoY Δ    | YoY Δ%  |
-|---------------------|---------------|----------|---------|----------|---------|
-| Prior   (YYYY-MM)   | xxx,xxx       |          |         |          |         |
-| Current (YYYY-MM)   | xxx,xxx       | +/-X,XXX | +/-X.X% |          |         |
-| YoY Prior (YYYY-MM) | xxx,xxx       |          |         |          |         |
-| YoY Curr  (YYYY-MM) | xxx,xxx       |          |         | +/-X,XXX | +/-X.X% |
+| Period              | [Key metric]  | Goal      | vs Goal Δ | vs Goal % | MoM Δ    | YoY Δ    |
+|---------------------|---------------|-----------|-----------|-----------|----------|----------|
+| Prior   (YYYY-MM)   | xxx,xxx       | xxx,xxx   | +/-X,XXX  | XX%       |          |          |
+| Current (YYYY-MM)   | xxx,xxx       | xxx,xxx   | +/-X,XXX  | XX%       | +/-X,XXX | +/-X,XXX |
+| YoY Curr  (YYYY-MM) | xxx,xxx       | n/a       | —         | —         |          | +/-X,XXX |
 ```
 
 The YoY comparison establishes the seasonal baseline and is **always required**,
 not optional. It answers: "Is this a new problem or a recurring seasonal pattern?"
 
-### Step 3: Anomaly Detection
+### Step 3: Anomaly Detection & Goal Attainment
 
 **Primary anchor depends on metric type:**
 
@@ -128,16 +155,24 @@ Apply the appropriate primary threshold (see `reference.md`) and flag:
 - 🟡 **WATCH** — within 50%–100% of threshold; note but not urgent
 - 🟢 **OK** — within normal range
 
-Present the primary flag first, secondary flag second:
+Present the primary flag first, secondary flag second, then goal attainment:
 ```
 [Rate/retention metrics]
 YoY (PRIMARY): 🔴/🟡/🟢  [current vs same month last year]  Δ = X.Xpp
 MoM (context): 🔴/🟡/🟢  [current vs prior month]           Δ = X.Xpp
+vs Goal:       🔴/🟡/🟢  [current vs goal]                  Δ = X.Xpp / XX% of goal
 
 [Count metrics]
 MoM (PRIMARY): 🔴/🟡/🟢  [current vs prior month]           Δ = X,XXX / X%
 YoY (context): 🔴/🟡/🟢  [current vs same month last year]  Δ = X,XXX / X%
+vs Goal:       🔴/🟡/🟢  [current vs goal]                  Δ = X,XXX / XX% of goal
 ```
+
+**Goal attainment flags** (when goal is available):
+- 🔴 **BEHIND** — actual < 95% of goal
+- 🟡 **AT RISK** — actual 95%–99% of goal
+- 🟢 **ON TRACK** — actual ≥ 100% of goal
+- ⚪ **NO GOAL** — no goal defined for this metric/period (skip this row)
 
 If both primary and secondary are flagged in the same direction → **escalate severity**
 (🟡+🟡 → 🔴; 🔴+🟡 → 🔴 with "double-confirmed").
@@ -146,7 +181,7 @@ effect; note explicitly before proceeding to decomposition.
 If YoY is flagged but MoM is OK for a rate metric → gradual structural decline;
 flag for monitoring even if it looks calm month-to-month.
 
-State both flags clearly before moving to decomposition.
+State all three flag rows (YoY/MoM/Goal) clearly before moving to decomposition.
 
 ### Step 4: Decompose
 
@@ -305,10 +340,13 @@ at `outputs/metric_diagnosis_{{METRIC}}_{{REPORTING_MONTH}}.html`.
 The report must include (in order):
 1. **Header** — metric name, reporting month, cohort month (for retention), date generated,
    and the **primary anomaly flag prominently displayed** (YoY for rate metrics, MoM for counts)
-2. **Anomaly flags** — for rate metrics: YoY flag is the hero card, MoM shown as a
-   secondary badge. For count metrics: MoM is the hero card, YoY secondary.
+2. **Scorecard / flag row** — three badges side by side when goal is available:
+   - For rate metrics: YoY flag (hero) | MoM flag (secondary) | vs Goal flag
+   - For count metrics: MoM flag (hero) | YoY flag (secondary) | vs Goal flag
+   - If no goal: only YoY and MoM badges; add a small ⚪ "No goal" label
+   - The **vs Goal** badge must show: actual, goal, Δ, and % of goal attained
 3. **Decomposition tables** — one table per breakdown dimension, with columns for:
-   current, MoM prior, YoY prior, **YoY Δ** (primary for rate metrics), MoM Δ (secondary)
+   current, MoM prior, YoY prior, **goal** (when available), **YoY Δ** (primary for rate metrics), MoM Δ (secondary)
 4. **Factor attribution section** — two waterfall tables side by side or stacked:
    - Primary: **YoY attribution** (for rate metrics) or **MoM attribution** (for counts)
    - Secondary: the other comparison, labeled as context
@@ -384,10 +422,20 @@ outputs/slides/{metric}_{YYYY_MM}/
 | 6 Hypotheses | Top 2 hypotheses by confidence; label confirmed vs needs-investigation; one investigative next step |
 | 7 Forward Look | One action per top-3 attribution factor; one monitoring recommendation |
 
+#### Executive-ready writing standard
+
+All `slides_outline.md` content — titles, taglines, and key messages — must meet the following bar:
+
+- **Taglines** lead with a verdict or finding, not a description of the slide. Example: *"Paid Early DD is the swing factor — down 11.6 pp YoY, explaining 74% of the gap"* not *"This slide shows the YoY change by segment."*
+- **Key messages** are 2–3 sentences of clean prose. No markdown bold, no bullets, no references to "supporting CSV" or "the chart shows." The message must stand alone as copy that can be pasted directly into a slide body or speaker notes.
+- **Numbers always anchor the message.** Every key message should contain at least one quantified finding.
+- **Lead with the implication.** Start with what the audience should take away, then provide the evidence.
+- In Cursor interactive mode, the agent MUST write custom key messages from the actual diagnosis findings rather than relying on the Python template generator. The template provides fallback copy for CLI mode only.
+
 #### Execution in Cursor interactive mode
 
 After generating the HTML (Step 8):
-1. Use the Write tool to create `slides_outline.md` with all 7 slide blocks fully populated.
+1. Use the Write tool to create `slides_outline.md` with all 7 slide blocks fully populated using exec-ready copy derived from the full analysis context.
 2. Use the Write tool to create each CSV from data already in memory (Steps 2–5 results).
 3. Generate PNG charts:
    - Attempt to run a short Python snippet via the Shell tool using `matplotlib`.

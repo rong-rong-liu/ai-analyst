@@ -8,6 +8,16 @@ description: >
 primary_key: ["USER_ID", "calendar_month"]
 
 key_columns:
+  - name: "is_active"
+    description: "Transaction Active (TA) flag — 1 if member had a qualifying transaction in the month"
+    notes: "This is the TA metric. NOT is_transaction_active (that column does not exist)."
+
+  - name: "is_active_dd"
+    description: "DD active flag — 1 if member had an active qualified DD in the month"
+
+  - name: "is_active_spend"
+    description: "Spend active flag — 1 if member made purchases in the month"
+
   - name: "is_current_dd"
     description: "Current DDer flag (standard)"
     notes: "Use is_current_dd_proforma for historical trend analysis"

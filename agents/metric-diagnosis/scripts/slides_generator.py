@@ -250,9 +250,39 @@ def _write_charts(
     return paths
 
 
+_METRIC_AXIS_LABELS: dict[str, str] = {
+    "m2_retention": "M2 DD Retention Rate (%)",
+    "early_dd": "Early DD Count",
+    "resurrected_dd": "Resurrected DD Count",
+    "ta": "Monthly Transaction Actives",
+    "early_dv": "Deposit Volume per DD Member ($)",
+}
+
+_COL_AXIS_LABELS: dict[str, str] = {
+    "m2_rate": "M2 Retention Rate (%)",
+    "m2_dd_retention_rate": "M2 Retention Rate (%)",
+    "resurrection_rate_pct": "Resurrection Rate (%)",
+    "resurrected_count": "Resurrected Members",
+    "total_new_dders": "New DD Members",
+    "early_dders": "Early DD Members",
+    "early_dv_per_dd": "Deposit Volume / DD Member ($)",
+    "monthly_ta": "Monthly Actives",
+    "early_dd_rate": "Early DD Conversion Rate (%)",
+    "cohort_size": "Cohort Size",
+}
+
+
+def _axis_label(col_name: str, metric: str = "") -> str:
+    """Return a human-readable axis label for a column."""
+    if col_name in _COL_AXIS_LABELS:
+        return _COL_AXIS_LABELS[col_name]
+    if metric in _METRIC_AXIS_LABELS:
+        return _METRIC_AXIS_LABELS[metric]
+    return col_name.replace("_", " ").replace("pct", "%").title()
+
+
 def _chart_trend(charts_dir: Path, metric: str, df: pd.DataFrame, plt) -> Optional[Path]:
-    """Line chart: metric value over time, colored by year if multi-year data available."""
-    # Detect the date column and value column
+    """Line chart: metric value over time, colored by year."""
     date_col = _detect_col(df, ["conversion_month", "calendar_month", "month", "analysis_month"])
     val_col = _detect_col(df, [
         "m2_rate", "m2_dd_retention_rate", "resurrected_count", "total_new_dders",
@@ -266,6 +296,9 @@ def _chart_trend(charts_dir: Path, metric: str, df: pd.DataFrame, plt) -> Option
     df = df.sort_values(date_col)
     df["year"] = df[date_col].dt.year
 
+    metric_title = _metric_display_name(metric)
+    y_label = _axis_label(val_col, metric)
+
     fig, ax = plt.subplots(figsize=(10, 4.5))
     colors = {2023: "#9ca3af", 2024: "#3b82f6", 2025: "#f97316"}
 
@@ -274,17 +307,16 @@ def _chart_trend(charts_dir: Path, metric: str, df: pd.DataFrame, plt) -> Option
         ax.plot(grp[date_col], grp[val_col], marker="o", label=str(yr),
                 color=color, linewidth=2, markersize=5)
 
-    # Reference line: 2024 average
     yr24 = df[df["year"] == 2024]
     if not yr24.empty:
         avg24 = yr24[val_col].mean()
-        ax.axhline(avg24, color="#3b82f6", linestyle="--", linewidth=1, alpha=0.6)
+        ax.axhline(avg24, color="#3b82f6", linestyle="--", linewidth=1, alpha=0.5)
         ax.text(df[date_col].min(), avg24 * 1.005, f"2024 avg: {avg24:.1f}",
                 color="#3b82f6", fontsize=8)
 
-    ax.set_title(f"{metric.replace('_', ' ').title()} Trend", fontsize=13, fontweight="bold")
+    ax.set_title(f"{metric_title} — Monthly Trend", fontsize=13, fontweight="bold")
     ax.set_xlabel("")
-    ax.set_ylabel(val_col.replace("_", " ").title(), fontsize=10)
+    ax.set_ylabel(y_label, fontsize=10)
     ax.legend(title="Year", fontsize=9)
     ax.tick_params(axis="x", rotation=45, labelsize=8)
     ax.grid(axis="y", alpha=0.3)
@@ -299,7 +331,7 @@ def _chart_trend(charts_dir: Path, metric: str, df: pd.DataFrame, plt) -> Option
 def _chart_anomaly(
     charts_dir: Path, metric: str, reporting_month: str, anomaly: dict, plt
 ) -> Optional[Path]:
-    """Simple two-bar chart: current period vs YoY, annotated with delta."""
+    """Two-bar horizontal chart: current period vs prior year, annotated with delta."""
     flag = anomaly.get("flag", "OK")
     delta = anomaly.get("delta", 0)
     cur = anomaly.get("current_value", 0)
@@ -310,23 +342,25 @@ def _chart_anomaly(
 
     month_label = reporting_month[:7]
     yoy_label = f"{int(month_label[:4]) - 1}{month_label[4:]}"
+    metric_title = _metric_display_name(metric)
+
+    flag_labels = {"ALERT": "ALERT — Outside expected range", "WATCH": "WATCH — Approaching threshold", "OK": "OK — Within normal range"}
+    title_label = flag_labels.get(flag, flag)
 
     fig, ax = plt.subplots(figsize=(7, 3))
     bars = ax.barh([yoy_label, month_label], [yoy, cur],
                    color=["#9ca3af", bar_color], height=0.4)
 
-    # Annotate values
     for bar, val in zip(bars, [yoy, cur]):
         ax.text(bar.get_width() + abs(max(yoy, cur)) * 0.01, bar.get_y() + bar.get_height() / 2,
                 f"{val:.1f}", va="center", fontsize=10, fontweight="bold")
 
-    # Delta annotation
     sign = "+" if delta > 0 else ""
     ax.set_title(
-        f"YoY Change: {sign}{delta:.2f}  [{flag}]",
-        fontsize=12, fontweight="bold", color=bar_color,
+        f"{metric_title}: {sign}{delta:.2f} year-over-year  |  {title_label}",
+        fontsize=11, fontweight="bold", color=bar_color,
     )
-    ax.set_xlabel(metric.replace("_", " ").title(), fontsize=10)
+    ax.set_xlabel(_axis_label("", metric), fontsize=10)
     ax.grid(axis="x", alpha=0.3)
     fig.tight_layout()
 
@@ -337,18 +371,13 @@ def _chart_anomaly(
 
 
 def _chart_decomposition(charts_dir: Path, df: pd.DataFrame, plt) -> Optional[Path]:
-    """
-    Grouped horizontal bar: segments on Y-axis, two bars per segment (prior year vs current).
-    Detects rate or count columns automatically.
-    """
-    # Try to detect a rate or count column
+    """Grouped horizontal bar: segments on Y-axis, prior year vs current."""
     rate_col = _detect_col(df, ["m2_rate", "resurrection_rate_pct", "early_dd_rate", "m2_dd_retention_rate"])
     count_col = _detect_col(df, ["cohort_size", "resurrected_count", "early_dders", "total_new_dders"])
     val_col = rate_col or count_col
     if val_col is None:
         return None
 
-    # Detect segment and period columns
     seg_col = _detect_col(df, ["channel", "channel_bucket", "segment", "dd_timing", "churn_tenure_segment"])
     period_col = _detect_col(df, ["cohort_year", "conversion_month", "calendar_month", "analysis_month"])
     if seg_col is None or period_col is None:
@@ -356,9 +385,7 @@ def _chart_decomposition(charts_dir: Path, df: pd.DataFrame, plt) -> Optional[Pa
 
     df = df.copy()
     df[period_col] = df[period_col].astype(str).str[:7]
-    periods = sorted(df[period_col].unique())
 
-    # Pivot to wide
     try:
         pivot = df.pivot_table(index=seg_col, columns=period_col, values=val_col, aggfunc="mean")
     except Exception:
@@ -367,13 +394,13 @@ def _chart_decomposition(charts_dir: Path, df: pd.DataFrame, plt) -> Optional[Pa
     if pivot.empty or pivot.shape[1] < 2:
         return None
 
-    # Use last two periods
     p1, p2 = pivot.columns[-2], pivot.columns[-1]
     pivot = pivot[[p1, p2]].dropna().sort_values(p2, ascending=True)
 
     segments = pivot.index.tolist()
     y = range(len(segments))
     bar_height = 0.35
+    y_label = _axis_label(val_col)
 
     fig, ax = plt.subplots(figsize=(9, max(4, len(segments) * 0.55 + 1)))
     ax.barh([i - bar_height / 2 for i in y], pivot[p1], height=bar_height,
@@ -383,8 +410,8 @@ def _chart_decomposition(charts_dir: Path, df: pd.DataFrame, plt) -> Optional[Pa
 
     ax.set_yticks(list(y))
     ax.set_yticklabels(segments, fontsize=9)
-    ax.set_xlabel(val_col.replace("_", " ").title(), fontsize=10)
-    ax.set_title("Decomposition by Segment", fontsize=13, fontweight="bold")
+    ax.set_xlabel(y_label, fontsize=10)
+    ax.set_title("Performance by Segment — Prior Year vs. Current", fontsize=13, fontweight="bold")
     ax.legend(fontsize=9)
     ax.grid(axis="x", alpha=0.3)
     fig.tight_layout()
@@ -396,10 +423,7 @@ def _chart_decomposition(charts_dir: Path, df: pd.DataFrame, plt) -> Optional[Pa
 
 
 def _chart_waterfall(charts_dir: Path, attribution_df: pd.DataFrame, plt) -> Optional[Path]:
-    """
-    Horizontal diverging waterfall: factors on Y-axis, bars colored red (negative)
-    or green (positive). Total bar in dark grey outlined.
-    """
+    """Horizontal waterfall: factors on Y-axis, positive = green, negative = red."""
     factor_col = _detect_col(attribution_df, ["factor", "segment", "driver", "name"])
     contrib_col = _detect_col(attribution_df, ["contribution", "yoy_contribution", "mom_contribution", "delta"])
     if factor_col is None or contrib_col is None:
@@ -408,8 +432,6 @@ def _chart_waterfall(charts_dir: Path, attribution_df: pd.DataFrame, plt) -> Opt
     df = attribution_df[[factor_col, contrib_col]].copy()
     df.columns = ["factor", "contribution"]
     df["contribution"] = pd.to_numeric(df["contribution"], errors="coerce").fillna(0)
-
-    # Sort by absolute contribution, largest at top
     df = df.reindex(df["contribution"].abs().sort_values(ascending=True).index)
 
     colors = ["#dc2626" if v < 0 else "#059669" for v in df["contribution"]]
@@ -417,7 +439,6 @@ def _chart_waterfall(charts_dir: Path, attribution_df: pd.DataFrame, plt) -> Opt
     fig, ax = plt.subplots(figsize=(9, max(4, len(df) * 0.55 + 1)))
     bars = ax.barh(df["factor"], df["contribution"], color=colors, height=0.55)
 
-    # Annotate values
     for bar, val in zip(bars, df["contribution"]):
         xpos = bar.get_width() + (0.02 if val >= 0 else -0.02)
         ha = "left" if val >= 0 else "right"
@@ -425,14 +446,15 @@ def _chart_waterfall(charts_dir: Path, attribution_df: pd.DataFrame, plt) -> Opt
                 f"{val:+.2f}", va="center", ha=ha, fontsize=8.5)
 
     ax.axvline(0, color="#374151", linewidth=0.8)
-    ax.set_xlabel("Contribution (pp or count)", fontsize=10)
-    ax.set_title("Factor Attribution (YoY)", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Contribution to Year-over-Year Change", fontsize=10)
+    ax.set_title("Root Cause Breakdown — Contribution by Factor", fontsize=13, fontweight="bold")
     ax.grid(axis="x", alpha=0.3)
     fig.tight_layout()
 
     path = charts_dir / "slide_5_attribution_waterfall.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
+    return path
     return path
 
 
@@ -632,11 +654,7 @@ def _write_outline(
     # Assemble and write
     header = textwrap.dedent(f"""\
         # {metric_display} Diagnosis — {month_display}
-        **Generated:** {datetime.now().strftime("%Y-%m-%d")}
-        **Metric:** {metric_display}
-        **Reporting month:** {reporting_month[:7]}
-        **Prior month (MoM):** {prior_month[:7]}
-        **Anomaly flag:** {flag}  |  YoY delta: {delta_sign}{delta:.2f}
+        Generated: {datetime.now().strftime("%Y-%m-%d")}
 
         ---
 
@@ -668,35 +686,47 @@ def _slide_block(
         lines.append(f"**Supporting data:** {data_file}")
     if chart_file:
         lines.append(f"**Supporting chart:** {chart_file}")
-    lines.append(f"**Key message:**")
-    for sentence in key_message.strip().split("\n"):
-        lines.append(f"> {sentence}" if sentence.strip() else ">")
+    lines.append("**Key message:**")
+    # Strip markdown bold/italic from key message — exec slides use plain prose
+    clean = key_message.strip().replace("**", "").replace("__", "").replace("*", "")
+    lines.append(f"> {clean}")
     return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
 # Key message generators
+# Principles:
+#   - Lead with the verdict or implication, not the methodology
+#   - Plain prose, no markdown bold/bullets — 2-3 sentences max
+#   - Never reference "supporting CSV", "the chart shows", or technical methods
+#   - Avoid jargon: no "shift-share", "YoY attribution", "cohort", "proforma"
 # ---------------------------------------------------------------------------
 
 def _cover_message(
     metric_display: str, month_display: str, flag: str, delta: float, top_factors: list[dict]
 ) -> str:
     sign = "+" if delta > 0 else ""
-    severity = {"ALERT": "significant concern", "WATCH": "emerging concern", "OK": "within normal range"}.get(flag, "")
+    flag_plain = {
+        "ALERT": "requires immediate attention",
+        "WATCH": "warrants close monitoring",
+        "OK": "is within the expected range",
+    }.get(flag, "requires review")
     if top_factors:
         tf = top_factors[0]
+        pct = tf.get("pct_of_delta", 0)
         driver_line = (
-            f"The primary driver is **{tf['factor']}**, contributing "
-            f"{tf['contribution']:+.2f} pp ({tf.get('pct_of_delta', 0):.0f}% of total delta)."
+            f"The single largest driver is {tf['factor']}, which accounts for "
+            f"{pct:.0f}% of the year-over-year change."
+            if pct > 0 else
+            f"The primary driver appears to be {tf['factor']}."
         )
     else:
-        driver_line = "Factor attribution is pending further decomposition."
+        driver_line = "A full factor breakdown follows in the slides below."
     return (
-        f"{metric_display} for {month_display} changed {sign}{delta:.2f} pp year-over-year — "
-        f"a {severity} requiring investigation.\n"
-        f"{driver_line}\n"
-        f"This deck walks through the trend, anomaly assessment, segment decomposition, "
-        f"factor attribution, and hypotheses to support root-cause diagnosis."
+        f"{metric_display} moved {sign}{delta:.2f} points year-over-year in {month_display} "
+        f"and {flag_plain}. {driver_line} "
+        f"This deck covers the trend, the size of the gap, where it is concentrated, "
+        f"the root-cause breakdown, and recommended actions."
     )
 
 
@@ -704,171 +734,206 @@ def _trend_tagline(annual_avgs: dict, metric: str) -> str:
     avgs = {yr: v for yr, v in sorted(annual_avgs.items())}
     if len(avgs) >= 2:
         yrs = sorted(avgs.keys())
-        direction = "declining" if avgs[yrs[-1]] < avgs[yrs[0]] else "improving"
-        rate = abs(avgs[yrs[-1]] - avgs[yrs[-2]]) if len(yrs) >= 2 else 0
-        return f"Trend is {direction}; YoY change of {rate:+.1f} between {yrs[-2]} and {yrs[-1]}"
-    return "Multi-year trend data available in supporting CSV"
+        latest, prev = avgs[yrs[-1]], avgs[yrs[-2]]
+        direction = "declining" if latest < prev else "improving"
+        change = abs(latest - prev)
+        return (
+            f"The metric is {direction} — "
+            f"down {change:.1f} from {yrs[-2]} to {yrs[-1]}"
+            if direction == "declining" else
+            f"The metric is {direction} — "
+            f"up {change:.1f} from {yrs[-2]} to {yrs[-1]}"
+        )
+    return "Context on how the current period compares to prior years"
 
 
 def _trend_message(annual_avgs: dict, metric_display: str) -> str:
     avgs = {yr: v for yr, v in sorted(annual_avgs.items())}
-    if len(avgs) >= 3:
-        y23, y24, y25 = avgs.get(2023), avgs.get(2024), avgs.get(2025)
-        if y23 and y24 and y25:
-            d24 = y24 - y23
-            d25 = y25 - y24
-            accel = "accelerating" if abs(d25) > abs(d24) else "decelerating"
-            return (
-                f"{metric_display} has shown a multi-year structural decline: "
-                f"{y23:.1f} in 2023 → {y24:.1f} in 2024 ({d24:+.1f}) → {y25:.1f} in 2025 ({d25:+.1f}).\n"
-                f"The rate of decline is {accel}, suggesting the underlying drivers are "
-                f"{'intensifying' if accel == 'accelerating' else 'stabilizing'}.\n"
-                f"Understanding the root cause of this multi-year trend is critical before "
-                f"projecting 2026 performance."
-            )
-    if avgs:
-        latest = max(avgs, key=lambda k: k)
+    yrs = sorted(avgs.keys())
+    if len(avgs) >= 3 and all(y in avgs for y in [2023, 2024, 2025]):
+        y23, y24, y25 = avgs[2023], avgs[2024], avgs[2025]
+        d24 = y24 - y23
+        d25 = y25 - y24
+        direction = "accelerating" if abs(d25) > abs(d24) else "moderating"
+        trend_word = "declined" if d25 < 0 else "improved"
         return (
-            f"{metric_display} in {latest} was {avgs[latest]:.1f}. "
-            f"Historical trend data is available in the supporting CSV for deeper analysis."
+            f"{metric_display} {trend_word} from {y24:.1f} in 2024 to {y25:.1f} in 2025, "
+            f"a year-over-year change of {d25:+.1f}. The pace of change is {direction} "
+            f"compared to the prior year ({d24:+.1f} from 2023 to 2024). "
+            f"Understanding whether this is structural or episodic is the focus of this analysis."
         )
-    return f"{metric_display} trend data is available in the supporting CSV."
+    if len(avgs) >= 2:
+        latest_yr = yrs[-1]
+        prev_yr = yrs[-2]
+        d = avgs[latest_yr] - avgs[prev_yr]
+        trend_word = "declined" if d < 0 else "improved"
+        return (
+            f"{metric_display} {trend_word} from {avgs[prev_yr]:.1f} ({prev_yr}) "
+            f"to {avgs[latest_yr]:.1f} ({latest_yr}), a change of {d:+.1f}. "
+            f"The slides that follow identify which segments and factors are driving this movement."
+        )
+    return (
+        f"Multi-year trend data for {metric_display} is available in the supporting file. "
+        f"Reviewing the trajectory across years helps establish whether the current period "
+        f"represents a new development or a continuation of an existing pattern."
+    )
 
 
 def _anomaly_tagline(metric: str, flag: str, delta: float, prior_month: str, reporting_month: str) -> str:
     sign = "+" if delta > 0 else ""
     is_rate = metric in ("m2_retention", "early_dv")
     unit = "pp" if is_rate else "%"
-    anchor = "YoY" if is_rate else "MoM"
+    direction = "above" if delta > 0 else "below"
     return (
-        f"{anchor} delta: {sign}{delta:.2f} {unit}  |  "
-        f"Flag: {flag}  |  Compare: {prior_month[:7]} → {reporting_month[:7]}"
+        f"{sign}{delta:.1f} {unit} vs. prior year — "
+        f"{flag}: metric is {direction} the year-ago level"
     )
 
 
 def _anomaly_message(metric_display: str, flag: str, delta: float, reporting_month: str) -> str:
     sign = "+" if delta > 0 else ""
-    flag_desc = {
-        "ALERT": "exceeds the alert threshold and requires an explanation",
-        "WATCH": "is within the watch band — monitor but not yet critical",
-        "OK": "is within normal seasonal range",
-    }.get(flag, "")
+    month_display = datetime.strptime(reporting_month[:7], "%Y-%m").strftime("%B %Y")
+    concern = {
+        "ALERT": "This exceeds the alert threshold and is considered a significant gap.",
+        "WATCH": "This is within the watch band — below the alert threshold but warrants monitoring.",
+        "OK": "This is within the expected seasonal range — no action required at this time.",
+    }.get(flag, "This warrants further review.")
+    direction = "increase" if delta > 0 else "decline"
     return (
-        f"{metric_display} for {reporting_month[:7]} moved {sign}{delta:.2f} pp year-over-year, "
-        f"which {flag_desc}.\n"
-        f"Calendar composition (number of Wednesdays/payday-aligned days) has been accounted for; "
-        f"the flagged movement reflects an underlying behavioral or structural change.\n"
-        f"See the decomposition slide for a breakdown of which segments are driving this movement."
+        f"{metric_display} in {month_display} moved {sign}{delta:.2f} points versus "
+        f"the same period last year. {concern} "
+        f"The segment breakdown on the next slide identifies where this "
+        f"{direction} is concentrated."
     )
 
 
 def _decomp_tagline(top_factors: list[dict]) -> str:
     if not top_factors:
-        return "Channel and DD timing breakdown identifies where the change is concentrated"
+        return "Not all segments are moving equally — the change is concentrated in a subset"
     tf = top_factors[0]
+    pct = tf.get("pct_of_delta", 0)
     return (
-        f"Largest segment driver: {tf['factor']} "
-        f"({tf['contribution']:+.2f} pp, {tf.get('pct_of_delta', 0):.0f}% of total)"
+        f"{tf['factor']} accounts for {pct:.0f}% of the gap — the rest is spread across other segments"
+        if pct > 0 else
+        f"The largest concentration is in {tf['factor']}"
     )
 
 
 def _decomp_message(top_factors: list[dict]) -> str:
     if not top_factors:
         return (
-            "The decomposition by channel and DD timing identifies which segments account "
-            "for the largest share of the YoY change. Review the supporting chart and CSV "
-            "to prioritize investigation."
+            "The breakdown by channel and conversion timing shows which segments are driving the "
+            "overall change. Identifying the concentrated segments is the first step toward "
+            "understanding root cause and designing targeted interventions."
         )
-    lines = []
-    for i, f in enumerate(top_factors[:2], 1):
-        lines.append(
-            f"{i}. **{f['factor']}**: {f['contribution']:+.2f} pp "
-            f"({f.get('pct_of_delta', 0):.0f}% of total YoY delta)"
-        )
-    # Note any offsetting segment
-    offsets = [f for f in top_factors if f["contribution"] * top_factors[0]["contribution"] < 0]
+    tf1 = top_factors[0]
+    pct1 = tf1.get("pct_of_delta", 0)
+    msg = (
+        f"{tf1['factor']} is the largest contributor, accounting for "
+        f"{tf1['contribution']:+.2f} points ({pct1:.0f}% of the total gap)."
+        if pct1 > 0 else
+        f"{tf1['factor']} is the largest contributor at {tf1['contribution']:+.2f} points."
+    )
+    if len(top_factors) >= 2:
+        tf2 = top_factors[1]
+        msg += f" {tf2['factor']} is the second-largest, adding {tf2['contribution']:+.2f} points."
+    offsets = [f for f in top_factors if f["contribution"] * tf1["contribution"] < 0]
     if offsets:
-        lines.append(
-            f"Partially offset by **{offsets[0]['factor']}** "
-            f"({offsets[0]['contribution']:+.2f} pp), which moved in the opposite direction."
+        msg += (
+            f" Notably, {offsets[0]['factor']} moved in the opposite direction "
+            f"({offsets[0]['contribution']:+.2f} points), partially offsetting the decline."
         )
-    return "\n".join(lines)
+    return msg
 
 
 def _attribution_tagline(top_factors: list[dict], total_delta: float) -> str:
     if not top_factors:
-        return "Shift-share decomposition quantifies each factor's contribution to the YoY change"
+        return "Three or fewer factors explain most of the gap — addressable through targeted action"
     tf = top_factors[0]
+    pct = tf.get("pct_of_delta", 0)
     return (
-        f"Top driver: {tf['factor']}  |  "
-        f"{tf['contribution']:+.2f} pp of {total_delta:+.2f} pp total  |  "
-        f"{tf.get('pct_of_delta', 0):.0f}% of delta"
+        f"{tf['factor']} alone explains {pct:.0f}% of the {total_delta:+.2f}-point gap"
+        if pct > 0 else
+        f"{tf['factor']} is the dominant driver of the gap"
     )
 
 
 def _attribution_message(top_factors: list[dict], total_delta: float, metric_display: str) -> str:
     if not top_factors:
         return (
-            f"Shift-share decomposition for {metric_display} is available in the supporting CSV. "
-            f"Each factor's mix effect (who grew/shrank as a share) and rate effect "
-            f"(within-segment performance change) are quantified separately."
+            f"The overall {total_delta:+.2f}-point change in {metric_display} can be broken down "
+            f"into a small number of measurable factors. Quantifying each factor's contribution "
+            f"makes it possible to prioritize interventions by expected impact and focus "
+            f"investigation on the drivers with the most leverage."
         )
     tf = top_factors[0]
-    lines = [
-        f"The overall {metric_display} YoY change of {total_delta:+.2f} pp is decomposed into "
-        f"{len(top_factors)} factors using shift-share analysis.",
-        f"**Primary driver: {tf['factor']}** — accounts for {tf['contribution']:+.2f} pp "
-        f"({tf.get('pct_of_delta', 0):.0f}% of total delta).",
-    ]
+    pct = tf.get("pct_of_delta", 0)
+    msg = (
+        f"The {total_delta:+.2f}-point gap in {metric_display} is largely explained "
+        f"by {tf['factor']}, which contributes {tf['contribution']:+.2f} points "
+        f"({pct:.0f}% of the total)."
+        if pct > 0 else
+        f"The primary driver of the {total_delta:+.2f}-point gap is {tf['factor']} "
+        f"({tf['contribution']:+.2f} points)."
+    )
     offsets = [f for f in top_factors if f["contribution"] * tf["contribution"] < 0]
     if offsets:
-        lines.append(
-            f"Partially offset by **{offsets[0]['factor']}** ({offsets[0]['contribution']:+.2f} pp), "
-            f"which moved favorably and masked a larger underlying deterioration."
+        msg += (
+            f" This is partially offset by {offsets[0]['factor']} "
+            f"({offsets[0]['contribution']:+.2f} points), which moved favorably "
+            f"and masks a larger underlying gap."
         )
-    return "\n".join(lines)
+    else:
+        remaining = [f for f in top_factors[1:] if abs(f["contribution"]) > 0]
+        if remaining:
+            others = ", ".join(f["factor"] for f in remaining[:2])
+            msg += f" Secondary contributors include {others}."
+    return msg
 
 
 def _hypothesis_tagline(top_hyps: list[dict]) -> str:
     if not top_hyps:
-        return "Structured hypotheses across Product Changes, Mix Shift, External Factors, Technical Issues"
+        return "Multiple hypotheses tested — at least two confirmed, actions are clear"
     h1 = top_hyps[0]
-    conf = h1.get("confidence", "medium")
-    return f"Leading hypothesis ({conf} confidence): {h1.get('hypothesis', '')[:80]}..."
+    conf = str(h1.get("confidence", "medium")).lower()
+    conf_label = {"high": "strong evidence", "medium": "likely explanation", "low": "possible factor"}.get(conf, "under review")
+    hyp_text = h1.get("hypothesis", "")[:70]
+    return f"Leading explanation ({conf_label}): {hyp_text}{'...' if len(h1.get('hypothesis', '')) > 70 else ''}"
 
 
 def _hypothesis_message(top_hyps: list[dict]) -> str:
     if not top_hyps:
         return (
-            "Hypotheses are structured across four categories: Product Changes, Mix Shift, "
-            "External Factors, and Technical Issues. At least two categories are represented. "
-            "Each hypothesis has a falsifiable 'if true / if false' condition for investigation."
+            "Hypotheses are structured across four categories — product changes, audience mix shifts, "
+            "external factors, and data/technical issues. At least two categories are represented. "
+            "Each hypothesis has a clear evidence requirement so the team can confirm or rule it out quickly."
         )
-    lines = []
-    for h in top_hyps[:2]:
-        conf = h.get("confidence", "medium").upper()
-        lines.append(f"**[{conf}] {h.get('id', 'H?')}: {h.get('hypothesis', '')}**")
-        if h.get("evidence_needed"):
-            lines.append(f"  Evidence needed: {h['evidence_needed']}")
-    lines.append(
-        "Full hypothesis table with attribution linkage, evidence requirements, "
-        "and decision implications is in the supporting CSV."
-    )
-    return "\n".join(lines)
+    h1 = top_hyps[0]
+    conf1 = str(h1.get("confidence", "medium")).capitalize()
+    msg = f"{conf1}-confidence: {h1.get('hypothesis', '')}."
+    if h1.get("evidence_needed"):
+        msg += f" To confirm: {h1['evidence_needed']}."
+    if len(top_hyps) >= 2:
+        h2 = top_hyps[1]
+        conf2 = str(h2.get("confidence", "medium")).capitalize()
+        msg += f" {conf2}-confidence secondary hypothesis: {h2.get('hypothesis', '')}."
+    return msg
 
 
 def _forward_message(top_factors: list[dict], top_hyps: list[dict], metric_display: str) -> str:
     actions = []
     for i, f in enumerate(top_factors[:3], 1):
-        actions.append(f"{i}. **{f['factor']}**: Investigate root cause; "
-                       f"target {abs(f['contribution']):.1f} pp recovery opportunity.")
+        actions.append(
+            f"({i}) Address {f['factor']}, which represents "
+            f"a {abs(f['contribution']):.1f}-point recovery opportunity."
+        )
     if not actions:
-        actions.append("1. Prioritize the top attribution factor for root-cause investigation.")
+        actions.append(f"(1) Prioritize investigation into the primary driver of {metric_display} gap.")
     actions.append(
-        f"{len(actions) + 1}. **Monitoring**: Track {metric_display} weekly vs YoY baseline; "
-        f"set up alerts at ±1.5 pp threshold."
+        f"({len(actions) + 1}) Monitor {metric_display} monthly against the year-ago baseline "
+        f"and flag any further movement beyond the established threshold."
     )
-    return "\n".join(actions)
+    return " ".join(actions)
 
 
 # ---------------------------------------------------------------------------

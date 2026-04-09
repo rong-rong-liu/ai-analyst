@@ -51,10 +51,15 @@ entries:
     description: >
       Early DV/DD for a reporting month. Cohort = members who converted to DD in the prior calendar month.
       Sums deposit volume in the 35 days after each member's DD conversion date.
+      For MTD/in-progress cohorts, only include members whose 35-day window has fully closed
+      (DATEADD('day', 35, first_dd_dt) <= CURRENT_DATE) to avoid partial-window distortion.
     sql: |
       -- Early DD/DV: reporting_month anchored
       -- Cohort = members who converted to DD in the month prior to reporting month
       -- DV window = 35 days from each member's first_dd_dt
+      -- MATURITY GATE: for current (in-progress) cohorts, filter to members whose 35-day
+      --   window has fully closed: DATEADD('day', 35, first_dd_dt) <= CURRENT_DATE
+      --   For fully historical cohorts (prior months), no maturity gate needed.
       WITH cohort AS (
         SELECT
           user_id,
@@ -63,6 +68,7 @@ entries:
         FROM edw_db.core.member_details
         WHERE DATE_TRUNC('month', first_dd_dt) = DATEADD('month', -1, DATE_TRUNC('month', CURRENT_DATE))
           AND first_dd_dt IS NOT NULL
+          AND DATEADD('day', 35, first_dd_dt) <= CURRENT_DATE  -- maturity gate: 35-day window must be fully closed
       ),
       dv_35d AS (
         SELECT
@@ -71,9 +77,9 @@ entries:
         FROM cohort c
         JOIN edw_db.core.ftr_transaction t
           ON t.user_id = c.user_id
-          AND t.acct_in_out = 'In'
-          AND t.transaction_date >= c.conversion_date
-          AND t.transaction_date < DATEADD('day', 35, c.conversion_date)
+          AND t.type = 'Deposit'           -- CORRECT: captures external deposits (ACH, DD, check) only
+          AND t.post_date >= c.conversion_date          -- CORRECT date column: post_date, not transaction_date
+          AND t.post_date < DATEADD('day', 35, c.conversion_date)
         GROUP BY c.user_id
       )
       SELECT
@@ -89,10 +95,29 @@ entries:
       - "edw_db.core.ftr_transaction"
     tags: ["early_dv", "deposit_volume", "growth", "reporting_month_anchored", "35_days"]
     notes: >
-      Reporting-month anchored: Early DV/DD in Feb = Jan conversion cohort (35-day window spills into Feb).
+      Reporting-month anchored: Early DV/DD in March = Feb conversion cohort (35-day window spills into March).
       DV window is 35 days from conversion_date — not calendar month.
-      Verify transaction_date column name in FTR_TRANSACTION.
+      CRITICAL — date column: use post_date on ftr_transaction (transaction_date does NOT exist).
+      CRITICAL — deposit filter: use type = 'Deposit', NOT acct_in_out = 'In'.
+        acct_in_out = 'In' includes massive internal self-transfers (single_balance_sweep,
+        allocation_sweep, etc.) that dramatically inflate DV. type = 'Deposit' captures
+        only external inflows (ACH, direct deposit, check).
+      MATURITY GATE for MTD analysis: when the cohort month is the immediately prior calendar
+        month and the reporting month is still in progress, only include members whose full
+        35-day window has closed: DATEADD('day', 35, first_dd_dt) <= CURRENT_DATE.
+        Example: for the Feb 2026 cohort as of Mar 24, 2026, only members who converted
+        on or before Feb 17 have mature windows. Including partial-window members
+        understates DV/DD because their later deposits haven't occurred yet.
+        For fully historical cohorts, remove the maturity gate.
+    corrections:
+      - date: "2026-03-24"
+        issue: "acct_in_out = 'In' inflates DV with internal transfers; transaction_date does not exist on ftr_transaction"
+        fix: "Changed to type = 'Deposit' and post_date"
+      - date: "2026-03-24"
+        issue: "MTD Early DV/DD should only include members with fully closed 35-day windows to avoid partial-window distortion"
+        fix: "Added maturity gate: DATEADD('day', 35, first_dd_dt) <= CURRENT_DATE"
     created_at: "2026-03-17"
+    updated_at: "2026-03-24"
     use_count: 0
 
   - id: "CK-007"
@@ -107,7 +132,10 @@ entries:
           WHEN DATEDIFF('day', enrollment_date, first_dd_dt) <= 30 THEN 'Early DD'
           ELSE 'Late DD'
         END AS dd_timing,
-        acquisition_channel,  -- replace with actual channel column name
+        CASE
+          WHEN enrollment_channel IN ('Paid Credit', 'Paid Debit') THEN 'Paid'
+          ELSE COALESCE(enrollment_channel, 'Unknown')
+        END AS channel,
         COUNT(DISTINCT user_id) AS new_dders
       FROM edw_db.core.member_details
       WHERE first_dd_dt IS NOT NULL
@@ -119,8 +147,9 @@ entries:
     tables: ["edw_db.core.member_details"]
     tags: ["gross_new_dder", "early_dd", "late_dd", "channel", "growth", "d30"]
     notes: >
-      Replace 'acquisition_channel' with the actual column name from member_details.
-      Early DD channels: paid, referral, organic, Pay Anyone (PA), others.
+      Channel column: enrollment_channel from member_details.
+      ALWAYS combine 'Paid Credit' + 'Paid Debit' → 'Paid' using the CASE expression above.
+      Standard channels: Paid, Organic, Referral, Pay Anyone, PLM, Partnership.
       Only show mature cohorts (enrolled at least 30 days ago).
     created_at: "2026-03-17"
     use_count: 0

@@ -1,0 +1,118 @@
+table: analytics_db.dbt_cloud_prod.new_eligible_dds_v2
+deprecated_name: analytics.looker.new_eligible_dds
+description: >
+  Source-of-truth table for DD transaction classification with CONSISTENT/RETROACTIVE
+  paytype rules. Unlike ftr_transaction (which uses point-in-time rules), this table
+  applies the current classification logic uniformly to all historical transactions.
+  Use this table whenever comparing DD paytype composition across time periods to avoid
+  classification-change artifacts. Covers ACH/electronic DD-eligible deposits only —
+  non-ACH deposits (mobile check, P2P transfers) are NOT in this table.
+grain: transaction_id (one row per transaction)
+date_range: 2013-08-26 to present (refreshed daily)
+row_count_approx: ~1.07B rows (as of Mar 2026); ~90% qualified_dd_flag=1
+schema: analytics_db.dbt_cloud_prod
+
+key_columns:
+  - name: USER_ID
+    type: NUMBER
+    notes: Join key to member_details and other member tables.
+  - name: POST_DATE
+    type: DATE
+    notes: Use for date filtering (same as ftr_transaction.post_date). No transaction_date column.
+  - name: SETTLED_AMT
+    type: NUMBER
+    notes: Transaction amount. Same as ftr_transaction.settled_amt.
+  - name: DD_PROFORMA_TYPE
+    type: TEXT
+    notes: >
+      Consistently-classified DD source type. Applies current mapping rules retroactively.
+      Values: payroll, unknown, gig_instant_payout, social_security, government_benefit,
+      child_support, tax_refund, transfer, commission, trial_deposit.
+      KEY DIFFERENCE vs ftr_transaction: tax_refund and transfer are always present as
+      their own categories; in ftr_transaction these may have been classified as 'unknown'
+      in earlier periods due to point-in-time rules.
+  - name: QUALIFIED_DD_FLAG
+    type: NUMBER (0/1)
+    notes: >
+      1 = transaction qualifies as DD ($200+ from approved sources).
+      0 = transaction does NOT qualify. Replaces ftr_transaction.is_qualified_dd.
+      IMPORTANT: tax_refund is qualified_dd_flag=0 in this table (non-qualifying).
+      In ftr_transaction (point-in-time), some tax refunds were mistakenly classified
+      as unknown qualified DD in early 2025 before the mapping rule was updated.
+  - name: TRANSACTION_ID
+    type: TEXT
+    notes: Can be used to join to ftr_transaction if needed for non-ACH deposits.
+  - name: COMPANY_NAME
+    type: TEXT
+    notes: Originator company name (FinPlat only; NULL for Galileo — same as ftr_transaction).
+  - name: TRANSACTION_DETAILS_2
+    type: TEXT
+    notes: Originator name for Galileo transactions. Use COALESCE(COMPANY_NAME, TRANSACTION_DETAILS_2).
+
+dd_type_distribution_2025_onwards:
+  - type: payroll (qualified=1) — dominant, ~65% of rows
+  - type: unknown (qualified=1) — ~11% of rows; genuine unknown originators
+  - type: gig_instant_payout (qualified=1) — ~8%
+  - type: transfer (qualified=0) — ~6%; non-qualifying transfers
+  - type: social_security (qualified=1) — ~3%
+  - type: tax_refund (qualified=0) — ~2%; NON-QUALIFIED; spikes Jan-Apr (tax season)
+  - type: government_benefit (qualified=1) — ~1%
+  - type: child_support (qualified=1) — ~0.3%
+
+vs_ftr_transaction:
+  use_new_eligible_dds_when:
+    - Comparing DD paytype composition across time periods (avoids classification drift)
+    - Analyzing tax season effects (tax_refund correctly separated as non-qualified)
+    - Building consistent YoY baselines for Early DV/DD metric
+  use_ftr_transaction_when:
+    - Need ALL deposit types including mobile check, P2P, non-ACH (total DV/DD metric)
+    - Need other transaction fields not in new_eligible_dds (e.g. acct_in_out, type, movement_vector_intent)
+    - Querying purchase, withdrawal, or non-deposit transaction types
+
+gotchas:
+  - >
+    tax_refund is ALWAYS qualified_dd_flag=0 here. In ftr_transaction (2025 and earlier),
+    some tax refund transactions appeared as 'unknown' qualified DD due to point-in-time
+    classification. This inflated Feb 2025 "qualified DV/DD" figures when using ftr_transaction.
+    The difference materially affects Early DV/DD YoY comparisons for Feb cohorts (tax season).
+  - >
+    Does NOT include all deposit types. "Non-DD DV" from ftr_transaction (mobile check,
+    Venmo/Zelle-style P2P, etc.) will not appear here. For total DV/DD, still use
+    ftr_transaction type='Deposit'. For DD paytype composition only, use this table.
+  - >
+    Join on user_id + post_date range (same pattern as ftr_transaction joins). No need
+    to filter type='Deposit' since this table only contains deposit-type transactions.
+  - >
+    Non-payroll DD (other) category has been declining gradually over 2025 — this is a
+    real trend, not a classification artifact.
+
+example_query: |
+  -- Early DD DV/DD by paytype (consistent classification)
+  WITH cohort AS (
+    SELECT md.user_id, md.first_dd_dt AS conversion_date,
+      TO_VARCHAR(DATE_TRUNC('month', md.first_dd_dt), 'YYYY-MM-DD') AS cohort_month
+    FROM edw_db.core.member_details md
+    WHERE md.first_dd_dt IS NOT NULL
+      AND DATEDIFF('day', md.enrollment_date, md.first_dd_dt) <= 30
+      AND md.first_dd_dt >= '2026-02-01' AND md.first_dd_dt <= '2026-02-28'
+  ),
+  dd_counts AS (SELECT cohort_month, COUNT(DISTINCT user_id) dd_count FROM cohort GROUP BY 1),
+  dv AS (
+    SELECT c.cohort_month,
+      CASE WHEN t.qualified_dd_flag = 1 AND t.dd_proforma_type = 'payroll' THEN 'Payroll DD'
+           WHEN t.dd_proforma_type = 'tax_refund'                          THEN 'Tax Refund (non-qual)'
+           WHEN t.qualified_dd_flag = 1 AND t.dd_proforma_type = 'unknown' THEN 'Unknown DD'
+           WHEN t.qualified_dd_flag = 1                                     THEN 'Other qualified DD'
+           ELSE 'Other non-DD' END AS dv_type,
+      SUM(t.settled_amt) AS total_dv
+    FROM cohort c JOIN analytics_db.dbt_cloud_prod.new_eligible_dds_v2 t ON t.user_id = c.user_id
+      AND t.post_date >= c.conversion_date AND t.post_date < DATEADD('day', 35, c.conversion_date)
+    GROUP BY 1, 2
+  )
+  SELECT dv.cohort_month, dv.dv_type, dc.dd_count,
+    ROUND(dv.total_dv / NULLIF(dc.dd_count, 0), 2) AS dv_per_dd
+  FROM dv JOIN dd_counts dc ON dc.cohort_month = dv.cohort_month
+  ORDER BY 1, 2;
+
+updated_at: 2026-03-24
+added_by: growth-analytics (metric-diagnosis early_dv_2026_03)

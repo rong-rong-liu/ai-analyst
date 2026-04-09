@@ -9,10 +9,46 @@ primary_key: ["USER_ID"]
 common_filters:
   - "enrollment_date >= '2025-01-01'  -- filter to recent cohorts"
   - "LAST_DAY(enrollment_date) < DATEADD('day', -30, CURRENT_DATE)  -- mature D30 cohorts only"
+key_columns:
+  - name: "enrollment_channel"
+    description: >
+      Acquisition channel the member came through at enrollment.
+    notes: >
+      Known values: 'Organic', 'Paid Credit', 'Paid Debit', 'Referral', 'Pay Anyone',
+      'PLM', 'Partnership', NULL/'na' (small tail).
+      CHANNEL GROUPING RULE: Always combine 'Paid Credit' and 'Paid Debit' into a single
+      'Paid' bucket for reporting. Use:
+        CASE
+          WHEN enrollment_channel IN ('Paid Credit', 'Paid Debit') THEN 'Paid'
+          ELSE COALESCE(enrollment_channel, 'Unknown')
+        END AS channel
+      Never report Paid Credit and Paid Debit as separate channels in standard analysis.
+
+  - name: "enrollment_promotion"
+    description: >
+      Enrollment-time promotion/incentive program the member was enrolled under.
+      NULL means no promotion. Used to identify intro offer members.
+    notes: >
+      Known values (as of Feb 2026):
+        - intro_offer_v3_enrollments — main intro offer variant (active Feb 2026)
+        - intro_offer_v2_enrollments — prior intro offer variant
+        - intro_offer_v3c_enrollments — intro offer sub-variant
+        - new_paid_promocodedd200_2025_cohort — promo code DD offer
+        - partnerships_boost_new_to_boost — Boost partnership offer
+        - NULL — no promotion (organic/unpromoted enrollment)
+      The intro offer gives members up to $350 bonus upon fulfilling DD $200+ qualification.
+      It is targeted at the Paid channel. Flag intro offer members with:
+        enrollment_promotion ILIKE '%intro_offer%'
+      IMPORTANT: Intro offer members have structurally lower DV/DD than no-promo members
+      (payroll DV/DD ~12% lower, total DV/DD ~21% lower in Feb 2026 Paid early DD cohort).
+      When analyzing DV/DD or deposit quality for Paid channel, always segment by
+      enrollment_promotion to avoid mix dilution distorting the overall rate.
+
 gotchas:
   - "SNAPSHOT TABLE — only holds latest member state. For historical trends use MEMBER_DETAILS_HISTORY or base__user_month."
   - "For D30 conversion: filter LAST_DAY(enrollment_date) < DATEADD('day', -30, CURRENT_DATE) to ensure cohort is fully mature"
+  - "INTRO OFFER MIX DILUTION — enrollment_promotion flags intro offer members (ILIKE '%intro_offer%'). These members have lower DV/DD than no-promo members. For Paid channel DV/DD analysis, always segment by enrollment_promotion or the blended rate will be misleadingly low."
 related_tables:
   - "MEMBER_DETAILS_HISTORY — same data but with TRUE HISTORICAL ROWS (daily snapshots)"
   - "base__user_month — monthly grain for retention/conversion analysis"
-updated_at: "2026-03-17"
+updated_at: "2026-03-24"

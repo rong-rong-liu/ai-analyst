@@ -1,0 +1,129 @@
+# Metric Diagnosis Context File — March 2026 Reporting Month
+# Active context for the Early DV/DD diagnosis (Feb 2026 cohort)
+# Created: 2026-03-24
+
+reporting_month: "2026-03-01"
+prior_month:     "2026-02-01"
+
+thresholds:
+  gross_new_dd_pct:       8
+  early_dd_pct:          10
+  late_dd_pct:           10
+  resurrected_dd_pct:    10
+  m2_retention_pp:        1.5
+  early_dv_pct:           3
+  channel_share_pp:       5
+  ta_pct:                 5
+
+metrics:
+
+  early_dv:
+    historical_notes:
+      - >
+        TAX SEASON — Feb 2026 cohort is peak tax refund territory. The 35-day DV window
+        for Feb converters runs Feb 1 – early Apr, overlapping with peak IRS refund
+        processing (typically Feb–Mar for early filers). Tax refunds historically boost
+        non-payroll DD DV and non-DD DV for Q1 cohorts. If refund timing shifted this
+        year (later filings, slower IRS processing), the Feb cohort's DV window may
+        capture fewer refunds than Feb 2025.
+      - >
+        YoY CONTEXT (Feb 2025 vs Feb 2026): Non-payroll DD DV/DD is down -44% YoY even
+        for mature early converters ($553 vs $991). Before attributing this to behavioral
+        change, check TurboTax classification shift (see known_data_issues below) and
+        calendar composition (number of refund-eligible weeks in the 35-day window).
+    product_launches:
+      - >
+        INTRO OFFER (Paid channel, active in Feb 2026): Members enrolled via Paid channel
+        can earn up to $350 bonus upon fulfilling qualification rules (DD $200+).
+        Flagged in member_details via enrollment_promotion field.
+        Active variants in Feb 2026 cohort (Feb 1-17):
+          - intro_offer_v3_enrollments: 6,608 early DDers
+          - intro_offer_v2_enrollments: 331 early DDers
+          - intro_offer_v3c_enrollments: 58 early DDers
+          - Total intro offer early DDers: ~6,997 (43% of Paid early DD cohort)
+        Intro offer was NOT present in Feb 2025 (all Paid early DDers had NULL enrollment_promotion).
+    experiments:
+      - ""
+    policy_changes:
+      - ""
+    known_data_issues:
+      - >
+        COMPANY_NAME IS FINPLAT-ONLY — company_name in ftr_transaction is only
+        populated for FinPlat transactions; it is NULL for all Galileo transactions.
+        Never filter solely on company_name to identify a deposit source (e.g. TurboTax,
+        payroll provider) — this silently misses all Galileo-processed volume.
+        Always use COALESCE(company_name, TRANSACTION_DETAILS_2) for originator lookups.
+        Use dd_proforma_type = 'tax_refund' to capture all tax refund deposits
+        regardless of platform or originator name.
+
+  gross_new_dd:
+    historical_notes:
+      - >
+        INTRO OFFER VOLUME EFFECT: Paid channel early DD volume (Feb 1-17) was +41% YoY
+        (11,610 → 16,386), driven entirely by intro offer members (+6,997). Non-promo Paid
+        early DD was actually DOWN -19% YoY (11,610 → 9,360). The intro offer is masking
+        underlying softness in organic Paid acquisition.
+    product_launches:
+      - >
+        INTRO OFFER — see early_dv.product_launches for full detail. Same offer applies
+        to gross new DD volume; intro offer members convert early (within 30 days) due
+        to the DD qualification requirement for the bonus.
+    experiments:
+      - ""
+    policy_changes:
+      - ""
+    known_data_issues:
+      - ""
+
+  resurrected_dd:
+    historical_notes:
+      - ""
+    product_launches:
+      - ""
+    experiments:
+      - ""
+    policy_changes:
+      - ""
+    known_data_issues:
+      - ""
+
+  m2_retention:
+    historical_notes:
+      - >
+        M2 Retention in Mar 2026 = retention of the Jan 2026 conversion cohort.
+        Jan 2026 cohort is post the Dec 16, 2025 card activation policy change,
+        so Referral channel quality should be improved vs prior fraud-impacted months.
+    product_launches:
+      - ""
+    experiments:
+      - ""
+    policy_changes:
+      - >
+        2025-12-16: Card activation rule for referral bonuses — already in effect
+        for the full Jan 2026 cohort. Expect cleaner Referral M2 retention than
+        the Nov/Dec 2025 cohorts.
+    known_data_issues:
+      - ""
+
+  ta:
+    historical_notes:
+      - >
+        Q1 TA (March goal month): Tax refund season typically boosts transaction
+        activity for Chime members in Feb–Apr. March TA should benefit from elevated
+        member spending from refund inflows.
+    product_launches:
+      - ""
+    experiments:
+      - ""
+    policy_changes:
+      - ""
+    known_data_issues:
+      - ""
+
+global_notes:
+  - >
+    Tax season (Q1 2026): IRS began accepting returns Jan 27, 2026. Peak refund
+    processing typically falls Feb–Mar. Any DV or TA metric for Feb/Mar cohorts
+    and reporting months should be interpreted in the context of tax refund timing.
+    Compare to Q1 2025 for seasonal baseline, but note TurboTax classification
+    changes affecting paytype breakdowns (see early_dv.known_data_issues).

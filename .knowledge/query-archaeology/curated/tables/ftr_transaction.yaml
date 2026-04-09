@@ -32,8 +32,30 @@ key_columns:
 
   - name: "dd_proforma_type"
     description: "DD source type"
-    values: ["payroll", "government_benefit", "gig_instant_payout"]
-    notes: "Use for segmenting DD by source type"
+    values: ["payroll", "government_benefit", "gig_instant_payout", "unknown", "tax_refund", "social_security", "transfer", "child_support", "commission", "trial_deposit"]
+    notes: >
+      POINT-IN-TIME classification — reflects the mapping rules at the time the transaction
+      was processed, NOT today's rules. This means historical transactions may have different
+      classifications than they would receive under current rules. For example, in early 2025,
+      TurboTax and other tax service deposits were classified as 'unknown' qualified DD;
+      under current rules they are 'tax_refund' (non-qualified).
+      CONSEQUENCE: YoY comparisons of dd_proforma_type will show artificial "unknown decline"
+      that is actually a reclassification artifact, not real behavioral change.
+      RECOMMENDATION: For consistent paytype analysis across time periods, use
+      analytics_db.dbt_cloud_prod.new_eligible_dds_v2 instead (applies current rules retroactively).
+
+  - name: "company_name"
+    description: "Transaction originator name (e.g. employer, tax refund processor). FinPlat transactions only — NULL for Galileo transactions."
+    notes: >
+      Platform-specific: populated only for FinPlat transactions; NULL for all Galileo transactions.
+      Always use COALESCE(company_name, TRANSACTION_DETAILS_2) to get the originator name
+      across both platforms. Never filter solely on company_name — it will silently miss
+      all Galileo transactions and produce misleading results.
+
+  - name: "transaction_details_2"
+    description: "Transaction originator name for Galileo transactions. Equivalent of company_name for the Galileo platform."
+    notes: >
+      Use COALESCE(company_name, TRANSACTION_DETAILS_2) as the unified originator name field.
 
   - name: "is_atm_withdrawal"
     description: "ATM withdrawal flag"
@@ -59,7 +81,8 @@ gotchas:
   - "Always filter to settled transactions — raw table may include pending/reversed entries"
   - "settled_amt can be negative for reversals/refunds — check direction with acct_in_out"
   - "is_qualified_dd = TRUE requires $200+ AND approved source — do not use settled_amt > 200 as a proxy"
-  - "dd_proforma_type uses proforma definition for historical consistency — prefer over raw type classification"
+  - "dd_proforma_type uses POINT-IN-TIME classification — NOT retroactively updated when mapping rules change. For consistent cross-period paytype analysis use analytics_db.dbt_cloud_prod.new_eligible_dds_v2 (consistent/retroactive rules)."
+  - "Comparing dd_proforma_type YoY will show artificial 'unknown' declines if a reclassification event occurred (e.g. early 2025: tax refunds reclassified from unknown→tax_refund). Always confirm with new_eligible_dds before attributing unknown shifts to behavioral causes."
   - "program_bank (Bancorp vs Stride) can affect join behavior if joining to program-specific tables"
 
-updated_at: "2026-03-17"
+updated_at: "2026-03-24"

@@ -74,7 +74,7 @@ Apply these to **both** MoM and YoY comparisons. Flag each independently.
 | Early DD by channel (share) | Any channel's share | shift > ±5 pp |
 | Resurrected DDer | Total count | % change > ±10% |
 | M2 DD Retention | Overall rate | absolute change > ±1.5 pp |
-| Early DD/DV | DV per current DD | % change > ±5% |
+| Early DD/DV | DV per current DD | % change > ±3% |
 | TA | Monthly count | QoQ % change (last month of quarter) > ±5% |
 | Gross New DDer — by paytype (share) | Any paytype's share | shift > ±5 pp |
 | M2 DD Retention — by paytype | Any paytype's rate | absolute change > ±2 pp |
@@ -819,14 +819,15 @@ If `base__user_month` does not carry channel, join to `member_details` on `user_
 
 | Category | Hypothesis | Data check |
 |---|---|---|
-| Mix Shift | Channel mix shifted toward lower-DV channels (e.g. more Organic vs Paid) | Channel breakdown query 4b |
-| Mix Shift | DD count base grew but DV didn't scale proportionally | DD_base_effect from numerator/denominator decomposition |
+| Mix Shift | Channel mix shifted toward lower-DV channels (e.g. more Paid vs Organic) | Channel breakdown query 4b — share shift |
+| Mix Shift | DD count base grew but DV didn't scale proportionally (denominator dilution) | DD_base_effect from numerator/denominator decomposition |
 | Mix Shift | Payroll DD DV share declined — more members receiving smaller payroll or non-payroll deposits | Paytype DV breakdown query 4c — payroll share MoM |
-| Mix Shift | Non-DD DV declined — members making fewer supplemental deposits (transfers, cash deposits) | Non-DD DV delta in query 4c |
+| Mix Shift | Non-DD DV declined — members making fewer supplemental deposits (transfers, tax refunds, cash) | Non-DD DV delta in query 4c |
 | Product Changes | New product feature changes deposit behavior (e.g. credit card rollout) | Check context product_launches |
 | Product Changes | Feature change affected deposit capture for specific paytype (e.g. gig payout routing change) | Compare gig/government DV MoM in query 4c |
-| External Factors | Seasonality — holiday period affects deposit behavior | YoY same month |
-| External Factors | Payroll calendar effect — fewer payroll cycles in the reporting month | Compare payroll DD DV per DD YoY (query 4c YoY pass) |
+| External Factors | **TAX SEASON TIMING (Q1 cohorts — Jan, Feb, Mar)**: Tax refunds boost non-payroll DD DV and non-DD DV for members whose 35-day window overlaps with refund season (Feb–Apr). If IRS timing, filing deadlines, or refund speed differ YoY, fewer/more refunds land in the 35-day window. ALWAYS check for Q1 cohorts before attributing DV movements to product or behavioral causes. | Compare non-DD DV and non-payroll DV YoY; check IRS refund calendar for the two comparison years |
+| External Factors | Payroll calendar effect — fewer payroll cycles in the conversion month | Compare payroll DD DV per DD YoY (query 4c YoY pass) |
+| Technical Issues | **COMPANY_NAME NULL TRAP — `company_name` is a FinPlat-only field.** It is NULL for all Galileo transactions. Filtering solely on `company_name` silently misses all Galileo-processed transactions and produces misleading results (e.g. near-zero volume for a provider that is actually large on Galileo). **Always use `COALESCE(company_name, TRANSACTION_DETAILS_2)`** to get the originator name across both platforms. Use `dd_proforma_type = 'tax_refund'` to capture all tax refunds regardless of originator name. | `COALESCE(company_name, TRANSACTION_DETAILS_2) ILIKE '%turbotax%'` — or use `dd_proforma_type = 'tax_refund'` for all tax refunds |
 
 ### TA
 
